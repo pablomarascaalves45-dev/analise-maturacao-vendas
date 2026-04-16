@@ -46,8 +46,11 @@ if arquivo_subido is not None:
             taxas = pd.to_numeric(df_growth[col_nome_real], errors='coerce').fillna(0).values
 
             projecao = []
-            # Mês 1: 60% do valor alvo
-            valor_atual = valor_estudo * 0.6 
+            
+            # --- REGRA DE FATURAMENTO INICIAL AJUSTADA ---
+            # Se for RS, arranca com 77%, caso contrário 60%
+            percentual_inicial = 0.77 if estado_sel == "RS" else 0.60
+            valor_atual = valor_estudo * percentual_inicial
             projecao.append(valor_atual)
             
             # Cálculo dos 36 meses
@@ -71,13 +74,11 @@ if arquivo_subido is not None:
             c1, c2 = st.columns([2, 1])
             
             with c1:
-                # O gráfico usa o df_res completo, mas o eixo X destaca seus marcos
                 fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
-                             title=f"Evolução de Faturamento - {estado_sel}",
+                             title=f"Evolução de Faturamento - {estado_sel} (Início {int(percentual_inicial*100)}%)",
                              template="plotly_white",
                              color_discrete_sequence=["#00CC96"])
                 
-                # AJUSTE SOMENTE NO GRÁFICO: Eixo X com os marcos solicitados
                 fig.update_layout(
                     xaxis=dict(
                         tickmode='array',
@@ -91,7 +92,6 @@ if arquivo_subido is not None:
                 
             with c2:
                 st.subheader("📊 Marcos de Maturação")
-                # AQUI VOLTOU O FORMATO ANTERIOR: Exibe o df_res completo (meses 1 a 36)
                 st.dataframe(
                     df_res.style.format({"Faturamento": "R$ {:,.2f}", "% Maturação": "{:.2f}%"}),
                     height=450, use_container_width=True, hide_index=True
@@ -99,7 +99,7 @@ if arquivo_subido is not None:
 
             st.markdown("---")
             m1, m2, m3 = st.columns(3)
-            m1.metric("Venda Inicial (Mês 1)", f"R$ {projecao[0]:,.2f}")
+            m1.metric("Venda Inicial (Mês 1)", f"R$ {projecao[0]:,.2f}", delta=f"{int(percentual_inicial*100)}% do Alvo", delta_color="normal")
             m2.metric("Venda Final (Mês 36)", f"R$ {projecao[-1]:,.2f}")
             
             atingiu = df_res[df_res["% Maturação"] >= 100]
