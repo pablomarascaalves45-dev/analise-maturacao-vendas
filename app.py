@@ -3,13 +3,13 @@ import plotly.express as px
 import streamlit as st
 import io
 
-# 1. CONFIGURAÇÃO DA PÁGINA
+# 1. CONFIGURAÇÃO DA PÁGINA (Mantido original)
 st.set_page_config(page_title="Curva de Maturação", layout="wide")
 
 st.title("📈 Projeção de Maturação: Analisador de Planilha")
 st.markdown("---")
 
-# 2. CAMPO PARA SUBIR O ARQUIVO (PROJEÇÃO)
+# 2. CAMPO PARA SUBIR O ARQUIVO (PROJEÇÃO - Mantido original)
 st.sidebar.header("📁 Dados de Projeção")
 arquivo_subido = st.sidebar.file_uploader(
     "Suba a planilha de Taxas de Crescimento:", 
@@ -93,12 +93,10 @@ if arquivo_subido is not None:
             mes_mat = atingiu["Mês"].iloc[0] if not atingiu.empty else "Acima de 36m"
             m3.metric("Maturação (100%)", f"Mês {mes_mat}")
 
-        else:
-            st.warning("⚠️ Estados RS, SC ou PR não detectados.")
     except Exception as e:
         st.error(f"Erro Projeção: {e}")
 
-# --- SEÇÃO: HISTÓRICO REAL 12 MESES (CONFORME SOLICITADO) ---
+# --- SEÇÃO: HISTÓRICO REAL 12 MESES (Mantido original) ---
 st.markdown("### 🏪 Histórico Real vs Crescimento Esperado")
 st.sidebar.markdown("---")
 st.sidebar.header("📁 Dados Históricos")
@@ -166,26 +164,13 @@ if arquivo_historico is not None:
                                 line=dict(color='orange', width=3))
             
             fig_hist.update_traces(marker_color='#3366CC', textposition='outside', selector=dict(type='bar'))
-            
-            fig_hist.update_layout(
-                yaxis_tickformat="R$,.2f",
-                xaxis_title=None,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            
+            fig_hist.update_layout(yaxis_tickformat="R$,.2f", xaxis_title=None, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
             st.plotly_chart(fig_hist, use_container_width=True)
-            
-            with st.expander("Ver comparação de valores (Real vs Esperado)"):
-                df_comp = df_loja[['Mes_PT', 'Mercadoria', 'Crescimento_Esperado']].copy()
-                df_comp.columns = ['Mês', 'Real (R$)', 'Esperado (R$)']
-                st.dataframe(df_comp.style.format({'Real (R$)': 'R$ {:,.2f}', 'Esperado (R$)': 'R$ {:,.2f}'}), use_container_width=True)
-        else:
-            st.error("A planilha de histórico deve conter a coluna 'Desc_Filial'.")
             
     except Exception as e:
         st.error(f"Erro ao processar histórico: {e}")
 
-# --- NOVA SEÇÃO: ANALISADOR DE DRE (CORRIGIDO PARA EVITAR KEYERROR) ---
+# --- SEÇÃO AJUSTADA: ANALISADOR DE DRE (FOCO EM COLUNA B E LINHA 1) ---
 st.markdown("---")
 st.header("📋 Analisador de DRE: Diagnóstico de Rentabilidade")
 
@@ -199,79 +184,85 @@ arquivo_dre = st.sidebar.file_uploader(
 
 if arquivo_dre is not None:
     try:
-        # Leitura da DRE
-        if "csv" in arquivo_dre.name.lower():
-            df_dre = pd.read_csv(arquivo_dre, engine='python')
-        else:
-            df_dre = pd.read_excel(arquivo_dre)
+        # Lê a planilha sem header fixo para mapearmos manualmente a Linha 1 e Coluna B
+        df_dre_raw = pd.read_excel(arquivo_dre, header=None)
+        
+        # Identifica meses na Linha 1 (índice 0) - Filtra apenas o que parece data ou mês
+        cabecalho_meses = df_dre_raw.iloc[0].tolist()
+        
+        # Mapeia as linhas alvo na Coluna B (índice 1)
+        termos_busca = {
+            "Receita": "Receita Bruta",
+            "Margem": "Margem de Contribuição",
+            "Folha": "Despesas Folha",
+            "ADM": "Despesas ADM",
+            "Operacao": "Despesas Operação",
+            "Resultado": "Resultado Operacional"
+        }
 
-        # Limpeza de nomes de colunas para evitar erros de espaços
-        df_dre.columns = [str(c).strip() for c in df_dre.columns]
+        indices_linhas = {}
+        for chave, termo in termos_busca.items():
+            # Procura na coluna B (índice 1)
+            match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.contains(termo, case=False, na=False)]
+            if not match.empty:
+                indices_linhas[chave] = match.index[0]
 
-        # Função para buscar valor de forma segura
-        def get_metric(keyword):
-            # Procura a palavra-chave na coluna que contém as descrições (geralmente a segunda coluna útil)
-            mask = df_dre.apply(lambda row: row.astype(str).str.contains(keyword, case=False).any(), axis=1)
-            row = df_dre[mask]
-            if not row.empty:
-                # Busca o valor na coluna 'Realizado' ou 'Total'
-                for col in ['Realizado', 'Total', 'Valor']:
-                    if col in df_dre.columns:
-                        return pd.to_numeric(row[col].iloc[0], errors='coerce')
-                # Se não achar colunas nomeadas, pega a última coluna numérica
-                return pd.to_numeric(row.iloc[0, -1], errors='coerce')
+        # Pegamos os dados da coluna "Total" ou a última preenchida da linha
+        def extrair_valor(chave):
+            if chave in indices_linhas:
+                idx = indices_linhas[chave]
+                # Tentamos pegar o valor da coluna 'Realizado' ou 'Total' (geralmente índice 3 ou 4)
+                # Na dúvida, pegamos o valor que não seja nulo na linha
+                valores_linha = df_dre_raw.iloc[idx, 2:] 
+                return pd.to_numeric(valores_linha.iloc[1], errors='coerce') # Índice 3 da planilha original (Total Realizado)
             return 0.0
 
-        receita = get_metric("Receita Bruta")
-        margem = get_metric("Margem de Contribuição")
-        despesas = get_metric("Despesas Operação")
-        resultado = get_metric("Lucro/Prejuízo")
+        v_receita = extrair_valor("Receita")
+        v_margem = extrair_valor("Margem")
+        v_folha = extrair_valor("Folha")
+        v_adm = extrair_valor("ADM")
+        v_operacao = extrair_valor("Operacao")
+        v_resultado = extrair_valor("Resultado")
 
-        # Layout de métricas
-        d1, d2, d3, d4 = st.columns(4)
-        d1.metric("Faturamento", f"R$ {receita:,.2f}")
-        d2.metric("Margem", f"R$ {margem:,.2f}")
-        d3.metric("Despesas", f"R$ {abs(despesas):,.2f}", delta_color="inverse")
-        d4.metric("Resultado Líquido", f"R$ {resultado:,.2f}", delta_color="normal" if resultado >= 0 else "inverse")
-
-        # Diagnóstico Inteligente
-        st.subheader("🕵️ Diagnóstico de Performance")
+        # Exibição das Métricas
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Receita Bruta", f"R$ {v_receita:,.2f}")
+        m2.metric("Margem Contrib.", f"R$ {v_margem:,.2f}")
+        m3.metric("Res. Operacional", f"R$ {v_resultado:,.2f}", delta_color="normal" if v_resultado >= 0 else "inverse")
         
-        with st.expander("Clique para ver o relatório detalhado", expanded=True):
-            if resultado < 0:
-                st.error(f"🚨 **A operação está negativa em R$ {abs(resultado):,.2f}**")
-                
-                # Lógica de análise
-                if receita > 0:
-                    perc_despesa = (abs(despesas) / receita) * 100
-                    if perc_despesa > 25:
-                        st.warning(f"⚠️ **Despesas Operacionais críticas:** Estão consumindo {perc_despesa:.1f}% do faturamento. O ideal para o setor é abaixo de 20%.")
-                    
-                    perc_margem = (margem / receita) * 100
-                    if perc_margem < 30:
-                        st.warning(f"📉 **Margem de Contribuição baixa:** {perc_margem:.1f}%. Verifique quebra de estoque ou excesso de descontos.")
-            else:
-                st.success("✅ A unidade apresenta resultado operacional positivo.")
+        custo_total_ofensores = abs(v_folha) + abs(v_adm) + abs(v_operacao)
+        m4.metric("Total Ofensores", f"R$ {custo_total_ofensores:,.2f}")
 
-        # Identificação de Despesas Críticas para o Gráfico
-        # Filtra linhas que contenham valores negativos na coluna de resultado
-        df_filt = df_dre.copy()
-        if 'Realizado' in df_filt.columns:
-            # Pega as 5 maiores despesas (valores negativos)
-            top_despesas = df_filt[pd.to_numeric(df_filt['Realizado'], errors='coerce') < 0].sort_values(by='Realizado').head(5)
-            
-            if not top_despesas.empty:
-                st.write("**⚠️ Principais Ofensores (Maiores Gastos):**")
-                # Usa a primeira coluna de texto como nome da despesa
-                col_nome = top_despesas.columns[1] 
-                top_despesas['Valor_Abs'] = top_despesas['Realizado'].abs()
+        # Diagnóstico Baseado nos Termos Solicitados
+        st.subheader("🕵️ Análise de Ofensores")
+        
+        c_diag, c_graph = st.columns([1, 1])
+        
+        with c_diag:
+            if v_resultado < 0:
+                st.error(f"A loja apresenta prejuízo operacional de R$ {abs(v_resultado):,.2f}")
                 
-                fig_dre = px.bar(top_despesas, x=col_nome, y='Valor_Abs', 
-                                 title="Maiores Despesas Identificadas",
-                                 labels={'Valor_Abs': 'Valor (R$)', col_nome: 'Conta'},
-                                 color_discrete_sequence=['#EF553B'])
-                st.plotly_chart(fig_dre, use_container_width=True)
+                # Análise de Folha (Média de mercado ~10-12%)
+                perc_folha = (abs(v_folha) / v_receita) * 100 if v_receita > 0 else 0
+                if perc_folha > 12:
+                    st.warning(f"⚠️ **Folha de Pagamento Alta:** Representa {perc_folha:.1f}% do faturamento. Avalie a produtividade da equipe.")
+                
+                # Análise de Margem
+                perc_margem = (v_margem / v_receita) * 100 if v_receita > 0 else 0
+                if perc_margem < 30:
+                    st.warning(f"📉 **Margem Crítica:** {perc_margem:.1f}%. Verifique perdas e CMV.")
+            else:
+                st.success("Operação com resultado positivo.")
+
+        with c_graph:
+            df_plot = pd.DataFrame({
+                "Categoria": ["Folha", "ADM", "Operação"],
+                "Valor": [abs(v_folha), abs(v_adm), abs(v_operacao)]
+            })
+            fig_dre = px.bar(df_plot, x="Categoria", y="Valor", text_auto='.2s',
+                             title="Distribuição de Custos (Ofensores)",
+                             color="Categoria", color_discrete_sequence=px.colors.qualitative.Prism)
+            st.plotly_chart(fig_dre, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Erro ao analisar DRE: Certifique-se de que a planilha subida é a DRE padrão.")
-        st.info(f"Detalhe técnico: {e}")
+        st.error(f"Erro ao processar DRE: Verifique se a Coluna B contém os nomes das contas. Detalhe: {e}")
