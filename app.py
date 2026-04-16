@@ -170,7 +170,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro ao processar histórico: {e}")
 
-# --- SEÇÃO AJUSTADA: ANALISADOR DE DRE (FOCO EM COLUNA B E LINHA 1) ---
+# --- SEÇÃO DRE ATUALIZADA (CONFORME SOLICITAÇÃO E IMAGEM) ---
 st.markdown("---")
 st.header("📋 Analisador de DRE: Diagnóstico de Rentabilidade")
 
@@ -184,85 +184,85 @@ arquivo_dre = st.sidebar.file_uploader(
 
 if arquivo_dre is not None:
     try:
-        # Lê a planilha sem header fixo para mapearmos manualmente a Linha 1 e Coluna B
+        # Carregando DRE respeitando a estrutura da imagem (Coluna B = Índice 1)
         df_dre_raw = pd.read_excel(arquivo_dre, header=None)
         
-        # Identifica meses na Linha 1 (índice 0) - Filtra apenas o que parece data ou mês
-        cabecalho_meses = df_dre_raw.iloc[0].tolist()
-        
-        # Mapeia as linhas alvo na Coluna B (índice 1)
-        termos_busca = {
-            "Receita": "Receita Bruta",
-            "Margem": "Margem de Contribuição",
-            "Folha": "Despesas Folha",
+        # Mapeamento de Linhas (Coluna B)
+        termos = {
+            "RB": "Receita Bruta",
+            "MC": "Margem de Contribuição",
+            "PVL": "Perdas Vencidos Liquido",
+            "DISC": "Discrepância _ Estoque",
+            "FOLHA": "Despesas Folha",
             "ADM": "Despesas ADM",
-            "Operacao": "Despesas Operação",
-            "Resultado": "Resultado Operacional"
+            "OPER": "Despesas Operação",
+            "RES": "Resultado Operacional"
         }
 
-        indices_linhas = {}
-        for chave, termo in termos_busca.items():
-            # Procura na coluna B (índice 1)
-            match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.contains(termo, case=False, na=False)]
+        indices = {}
+        for chave, texto in termos.items():
+            match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(texto, case=False, na=False)]
             if not match.empty:
-                indices_linhas[chave] = match.index[0]
+                indices[chave] = match.index[0]
 
-        # Pegamos os dados da coluna "Total" ou a última preenchida da linha
-        def extrair_valor(chave):
-            if chave in indices_linhas:
-                idx = indices_linhas[chave]
-                # Tentamos pegar o valor da coluna 'Realizado' ou 'Total' (geralmente índice 3 ou 4)
-                # Na dúvida, pegamos o valor que não seja nulo na linha
-                valores_linha = df_dre_raw.iloc[idx, 2:] 
-                return pd.to_numeric(valores_linha.iloc[1], errors='coerce') # Índice 3 da planilha original (Total Realizado)
+        # Extração de valores (Usando a coluna de Realizado Total - Índice 3)
+        def pegar_v(chave):
+            if chave in indices:
+                val = df_dre_raw.iloc[indices[chave], 3] # Índice 3 costuma ser o Total Realizado
+                return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
             return 0.0
 
-        v_receita = extrair_valor("Receita")
-        v_margem = extrair_valor("Margem")
-        v_folha = extrair_valor("Folha")
-        v_adm = extrair_valor("ADM")
-        v_operacao = extrair_valor("Operacao")
-        v_resultado = extrair_valor("Resultado")
+        vals = {k: pegar_v(k) for k in termos.keys()}
 
-        # Exibição das Métricas
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Receita Bruta", f"R$ {v_receita:,.2f}")
-        m2.metric("Margem Contrib.", f"R$ {v_margem:,.2f}")
-        m3.metric("Res. Operacional", f"R$ {v_resultado:,.2f}", delta_color="normal" if v_resultado >= 0 else "inverse")
+        # 1. MÉTRICAS PRINCIPAIS
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
+        c2.metric("Margem Contrib.", f"R$ {vals['MC']:,.2f}")
         
-        custo_total_ofensores = abs(v_folha) + abs(v_adm) + abs(v_operacao)
-        m4.metric("Total Ofensores", f"R$ {custo_total_ofensores:,.2f}")
+        res_cor = "normal" if vals['RES'] >= 0 else "inverse"
+        c3.metric("Resultado Oper.", f"R$ {vals['RES']:,.2f}", delta_color=res_cor)
+        
+        perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
+        c4.metric("Perdas + Discrep.", f"R$ {perdas_totais:,.2f}", delta="Quebra", delta_color="inverse")
 
-        # Diagnóstico Baseado nos Termos Solicitados
-        st.subheader("🕵️ Análise de Ofensores")
+        # 2. DIAGNÓSTICO DE INDICADORES (O que não está indo bem)
+        st.subheader("🕵️ Diagnóstico de Performance")
         
-        c_diag, c_graph = st.columns([1, 1])
+        col_diag, col_graf = st.columns([1, 1])
         
-        with c_diag:
-            if v_resultado < 0:
-                st.error(f"A loja apresenta prejuízo operacional de R$ {abs(v_resultado):,.2f}")
-                
-                # Análise de Folha (Média de mercado ~10-12%)
-                perc_folha = (abs(v_folha) / v_receita) * 100 if v_receita > 0 else 0
-                if perc_folha > 12:
-                    st.warning(f"⚠️ **Folha de Pagamento Alta:** Representa {perc_folha:.1f}% do faturamento. Avalie a produtividade da equipe.")
-                
-                # Análise de Margem
-                perc_margem = (v_margem / v_receita) * 100 if v_receita > 0 else 0
-                if perc_margem < 30:
-                    st.warning(f"📉 **Margem Crítica:** {perc_margem:.1f}%. Verifique perdas e CMV.")
-            else:
-                st.success("Operação com resultado positivo.")
+        with col_diag:
+            st.write("**Análise de Alertas:**")
+            
+            # Alerta de Resultado
+            if vals['RES'] < 0:
+                st.error(f"❌ **Prejuízo Detectado:** A operação está consumindo R$ {abs(vals['RES']):,.2f} além do que arrecada.")
+            
+            # Alerta de Margem (Ideal > 30%)
+            perc_margem = (vals['MC'] / vals['RB'] * 100) if vals['RB'] > 0 else 0
+            if perc_margem < 30:
+                st.warning(f"📉 **Margem Baixa ({perc_margem:.1f}%):** O ideal é acima de 30%. Isso indica custos de mercadoria altos ou excesso de descontos.")
+            
+            # Alerta de Perdas (Ideal < 1.5% da RB)
+            perc_perda = (perdas_totais / vals['RB'] * 100) if vals['RB'] > 0 else 0
+            if perc_perda > 1.5:
+                st.warning(f"🍎 **Quebra Elevada ({perc_perda:.2f}%):** Perdas e discrepâncias estão acima do limite aceitável de 1.5%.")
 
-        with c_graph:
-            df_plot = pd.DataFrame({
-                "Categoria": ["Folha", "ADM", "Operação"],
-                "Valor": [abs(v_folha), abs(v_adm), abs(v_operacao)]
-            })
-            fig_dre = px.bar(df_plot, x="Categoria", y="Valor", text_auto='.2s',
-                             title="Distribuição de Custos (Ofensores)",
-                             color="Categoria", color_discrete_sequence=px.colors.qualitative.Prism)
-            st.plotly_chart(fig_dre, use_container_width=True)
+            # Alerta de Folha (Ideal < 12%)
+            perc_folha = (abs(vals['FOLHA']) / vals['RB'] * 100) if vals['RB'] > 0 else 0
+            if perc_folha > 12:
+                st.info(f"👥 **Peso da Folha:** Representa {perc_folha:.1f}% do faturamento. Verifique escala de funcionários.")
+
+        with col_graf:
+            # Gráfico de Ofensores (Maiores Despesas)
+            df_gastos = pd.DataFrame({
+                "Conta": ["Folha", "ADM", "Operação", "Quebra/Perdas"],
+                "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
+            }).sort_values(by="Valor", ascending=False)
+            
+            fig_ofensores = px.pie(df_gastos, values='Valor', names='Conta', 
+                                   title="Distribuição de Gastos",
+                                   color_discrete_sequence=px.colors.sequential.RdBu)
+            st.plotly_chart(fig_ofensores, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Erro ao processar DRE: Verifique se a Coluna B contém os nomes das contas. Detalhe: {e}")
+        st.error(f"Erro ao processar DRE: {e}")
