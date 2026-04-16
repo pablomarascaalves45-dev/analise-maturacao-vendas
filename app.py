@@ -98,8 +98,8 @@ if arquivo_subido is not None:
     except Exception as e:
         st.error(f"Erro Projeção: {e}")
 
-# --- SEÇÃO: HISTÓRICO REAL 12 MESES (AJUSTADA) ---
-st.markdown("### 🏪 Histórico Real de Faturamento (Últimos 12 Meses)")
+# --- SEÇÃO: HISTÓRICO REAL 12 MESES (COM LINHA DE CRESCIMENTO ESPERADO) ---
+st.markdown("### 🏪 Histórico Real vs Crescimento Esperado")
 st.sidebar.markdown("---")
 st.sidebar.header("📁 Dados Históricos")
 arquivo_historico = st.sidebar.file_uploader(
@@ -122,7 +122,22 @@ if arquivo_historico is not None:
             df_loja = df_hist[df_hist['Desc_Filial'] == filial_sel].copy()
             df_loja = df_loja.sort_values(by='AnoMes')
 
-            # --- TRADUÇÃO DOS MESES PARA PORTUGUÊS ---
+            # --- CÁLCULO DA LINHA DE CRESCIMENTO ESPERADO ---
+            # Pegamos o valor do faturamento do primeiro mês disponível para esta loja
+            venda_inicial_real = df_loja['Mercadoria'].iloc[0]
+            esperado = [venda_inicial_real]
+            
+            # Aplicamos as taxas do estado selecionado começando do faturamento real
+            for i in range(1, len(df_loja)):
+                if i < len(taxas):
+                    proximo_valor = esperado[-1] * (1 + taxas[i])
+                    esperado.append(proximo_valor)
+                else:
+                    esperado.append(esperado[-1]) # Caso falte taxa na planilha base
+            
+            df_loja['Crescimento_Esperado'] = esperado
+
+            # --- FORMATAÇÃO VISUAL ---
             meses_map = {
                 '01': 'Jan', '02': 'Fev', '03': 'Mar', '04': 'Abr',
                 '05': 'Mai', '06': 'Jun', '07': 'Jul', '08': 'Ago',
@@ -131,48 +146,49 @@ if arquivo_historico is not None:
             
             def formatar_mes_pt(anomes):
                 try:
-                    # Suporta formatos '2025-04' ou '202504'
                     if '-' in str(anomes):
                         ano, mes = str(anomes).split('-')
                     else:
                         ano, mes = str(anomes)[:4], str(anomes)[4:]
                     return f"{meses_map[mes]}/{ano[2:]}"
-                except:
-                    return str(anomes)
+                except: return str(anomes)
 
             df_loja['Mes_PT'] = df_loja['AnoMes'].apply(formatar_mes_pt)
-            
-            # Formatação de Moeda Brasileira para o texto das barras
             df_loja['Valor_Texto'] = df_loja['Mercadoria'].apply(
                 lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
             )
 
-            # Gráfico de Histórico
+            # --- GRÁFICO COMBINADO (BARRAS + LINHA) ---
             fig_hist = px.bar(df_loja, x='Mes_PT', y='Mercadoria', 
-                             title=f"Faturamento Real Mensal - {filial_sel}",
-                             labels={'Mercadoria': 'Faturamento (R$)', 'Mes_PT': 'Mês'},
+                             title=f"Histórico Real vs Projeção de Crescimento do Estado ({estado_sel}) - {filial_sel}",
+                             labels={'Mercadoria': 'Faturamento Real', 'Mes_PT': 'Mês'},
                              template="plotly_white",
                              text='Valor_Texto') 
+
+            # Adiciona a linha de crescimento esperado baseada nas taxas do estado
+            fig_hist.add_scatter(x=df_loja['Mes_PT'], y=df_loja['Crescimento_Esperado'], 
+                                mode='lines+markers', 
+                                name='Crescimento Esperado (Estado)',
+                                line=dict(color='orange', width=3))
             
-            fig_hist.update_traces(
-                marker_color='#3366CC',
-                textposition='outside' 
-            )
+            fig_hist.update_traces(marker_color='#3366CC', textposition='outside', selector=dict(type='bar'))
             
             fig_hist.update_layout(
                 yaxis_tickformat="R$,.2f",
                 xaxis_title=None,
-                margin=dict(t=50, b=50)
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             
             st.plotly_chart(fig_hist, use_container_width=True)
             
-            with st.expander("Ver dados detalhados do histórico"):
-                st.table(df_loja[['Mes_PT', 'Mercadoria']].style.format({'Mercadoria': 'R$ {:,.2f}'}))
+            with st.expander("Ver comparação de valores (Real vs Esperado)"):
+                df_comp = df_loja[['Mes_PT', 'Mercadoria', 'Crescimento_Esperado']].copy()
+                df_comp.columns = ['Mês', 'Real (R$)', 'Esperado (R$)']
+                st.dataframe(df_comp.style.format({'Real (R$)': 'R$ {:,.2f}', 'Esperado (R$)': 'R$ {:,.2f}'}), use_container_width=True)
         else:
             st.error("A planilha de histórico deve conter a coluna 'Desc_Filial'.")
             
     except Exception as e:
         st.error(f"Erro ao processar histórico: {e}")
 elif arquivo_subido is not None:
-    st.info("💡 Para visualizar o gráfico de histórico, suba o segundo arquivo na barra lateral.")
+    st.info("💡 Para visualizar o gráfico de histórico e comparação, suba o segundo arquivo na barra lateral.")
