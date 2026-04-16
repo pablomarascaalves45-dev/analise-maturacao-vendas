@@ -57,32 +57,31 @@ if arquivo_subido is not None:
                     valor_atual = valor_atual * (1 + taxa_mes)
                     projecao.append(valor_atual)
             
-            # DataFrame Completo
+            # DataFrame Completo (será usado na Tabela)
             df_res = pd.DataFrame({
                 "Mês": range(1, len(projecao) + 1),
                 "Faturamento": projecao
             })
             df_res["% Maturação"] = (df_res["Faturamento"] / valor_estudo) * 100
 
-            # --- FILTRAR MESES ESPECÍFICOS ---
-            # Meses solicitados: 1 (como o 0/inicial), 3, 6, 9, 12, 18, 24, 30, 36
-            meses_filtro = [1, 3, 6, 9, 12, 18, 24, 30, 36]
-            df_filtrado = df_res[df_res["Mês"].isin(meses_filtro)].copy()
+            # Meses para destacar no Gráfico
+            meses_grafico = [1, 3, 6, 9, 12, 18, 24, 30, 36]
 
             # --- EXIBIÇÃO ---
             c1, c2 = st.columns([2, 1])
             
             with c1:
+                # O gráfico usa o df_res completo, mas o eixo X destaca seus marcos
                 fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
                              title=f"Evolução de Faturamento - {estado_sel}",
                              template="plotly_white",
                              color_discrete_sequence=["#00CC96"])
                 
-                # Destacar os meses específicos no eixo X
+                # AJUSTE SOMENTE NO GRÁFICO: Eixo X com os marcos solicitados
                 fig.update_layout(
                     xaxis=dict(
                         tickmode='array',
-                        tickvals=meses_filtro
+                        tickvals=meses_grafico
                     ),
                     yaxis_tickformat="R$,.2f"
                 )
@@ -92,9 +91,9 @@ if arquivo_subido is not None:
                 
             with c2:
                 st.subheader("📊 Marcos de Maturação")
-                # Exibe apenas os meses do filtro na tabela
+                # AQUI VOLTOU O FORMATO ANTERIOR: Exibe o df_res completo (meses 1 a 36)
                 st.dataframe(
-                    df_filtrado.style.format({"Faturamento": "R$ {:,.2f}", "% Maturação": "{:.2f}%"}),
+                    df_res.style.format({"Faturamento": "R$ {:,.2f}", "% Maturação": "{:.2f}%"}),
                     height=450, use_container_width=True, hide_index=True
                 )
 
