@@ -107,12 +107,17 @@ if arquivo_subido is not None:
             m1.metric("Venda Inicial (Mês 1)", f"R$ {projecao[0]:,.2f}", 
                       delta=f"{int(percentual_inicial*100)}% do Alvo", delta_color="normal")
             
-            # Venda 12 Meses
+            # Venda 12 Meses + % atingido
             v_12 = projecao[11] if len(projecao) >= 12 else 0
-            m12.metric("Venda 12 Meses", f"R$ {v_12:,.2f}")
+            perc_12 = (v_12 / valor_estudo) * 100 if valor_estudo > 0 else 0
+            m12.metric("Venda 12 Meses", f"R$ {v_12:,.2f}", 
+                       delta=f"{perc_12:.1f}% do Alvo", delta_color="normal")
             
-            # Venda Final
-            m2.metric("Venda Final (Mês 36)", f"R$ {projecao[-1]:,.2f}")
+            # Venda Final + % atingido
+            v_final = projecao[-1]
+            perc_final = (v_final / valor_estudo) * 100 if valor_estudo > 0 else 0
+            m2.metric("Venda Final (Mês 36)", f"R$ {v_final:,.2f}", 
+                      delta=f"{perc_final:.1f}% do Alvo", delta_color="normal")
             
             # Mês de Maturação
             atingiu = df_res[df_res["% Maturação"] >= 100]
