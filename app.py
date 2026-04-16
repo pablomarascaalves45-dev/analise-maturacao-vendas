@@ -11,7 +11,7 @@ st.markdown("---")
 
 # 2. CONFIGURAÇÃO DO ARQUIVO (NOME NO SEU GITHUB)
 # Se você renomeou no Git para crescimento.csv, use esse nome abaixo
-NOME_ARQUIVO = "crescimento.csv.xlsx - Sheet1.csv" 
+NOME_ARQUIVO = "crescimento.csv.xlsx" 
 
 def carregar_dados(caminho):
     if os.path.exists(caminho):
