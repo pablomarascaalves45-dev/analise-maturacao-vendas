@@ -1,4 +1,4 @@
-# --- SEÇÃO DRE CORRIGIDA: BUSCA DINÂMICA DE VALORES ---
+# --- SEÇÃO DRE CORRIGIDA: FILTRO DE STRINGS E BUSCA DE VALORES ---
 st.markdown("---")
 st.header("📋 Analisador de DRE: Diagnóstico de Rentabilidade")
 
@@ -12,7 +12,7 @@ arquivo_dre = st.sidebar.file_uploader(
 
 if arquivo_dre is not None:
     try:
-        # Carregamento robusto
+        # Leitura flexível
         if "csv" in arquivo_dre.name.lower():
             df_dre_raw = pd.read_csv(arquivo_dre, header=None, sep=None, engine='python')
         else:
@@ -32,36 +32,41 @@ if arquivo_dre is not None:
 
         indices = {}
         for chave, texto in termos.items():
-            # Busca flexível que ignora espaços e maiúsculas/minúsculas
+            # Busca ignorando maiúsculas/minúsculas e espaços
             match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.contains(texto, case=False, na=False)]
             if not match.empty:
                 indices[chave] = match.index[0]
 
-        def limpar_e_converter(valor):
-            if pd.isna(valor): return 0.0
-            if isinstance(valor, (int, float)): return float(valor)
-            # Remove R$, pontos de milhar e troca vírgula por ponto
-            s = str(valor).replace('R$', '').replace('.', '').replace(',', '.').strip()
+        def converter_apenas_numeros(valor):
+            """Tenta converter para float. Se for texto (ex: 'Realizado'), retorna None."""
+            if pd.isna(valor): return None
             try:
-                return float(s)
-            except:
-                return 0.0
+                # Se for string, limpa formatação de moeda/milhar
+                if isinstance(valor, str):
+                    s = valor.replace('R$', '').replace('.', '').replace(',', '.').strip()
+                    return float(s)
+                return float(valor)
+            except ValueError:
+                return None
 
         def pegar_valor_dinamico(chave):
             if chave in indices:
                 linha_idx = indices[chave]
-                # Varre da coluna 2 em diante até achar um número (evita cabeçalhos de texto)
+                # Varre as colunas a partir da C (índice 2) em diante
                 for col_idx in range(2, df_dre_raw.shape[1]):
                     val_bruto = df_dre_raw.iloc[linha_idx, col_idx]
-                    num = limpar_e_converter(val_bruto)
-                    if num != 0: # Assume que o primeiro número relevante é o Total
+                    num = converter_apenas_numeros(val_bruto)
+                    
+                    # Só aceita se for um número válido e não for o cabeçalho
+                    if num is not None:
                         return num
             return 0.0
 
+        # Extração de valores com a nova lógica
         vals = {k: pegar_valor_dinamico(k) for k in termos.keys()}
         rb = vals['RB'] if vals['RB'] != 0 else 1.0
         
-        # Cálculo de Indicadores
+        # Cálculos de Performance
         perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
         p_margem = (vals['MC'] / rb) * 100
         p_perda  = (perdas_totais / rb) * 100
@@ -69,7 +74,7 @@ if arquivo_dre is not None:
         p_adm    = (abs(vals['ADM']) / rb) * 100
         p_oper   = (abs(vals['OPER']) / rb) * 100
 
-        # --- INTERFACE DE DIAGNÓSTICO ---
+        # --- EXIBIÇÃO DASHBOARD ---
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
         m2.metric("Margem Real", f"{p_margem:.1f}%", delta="Meta: >30%")
@@ -80,10 +85,10 @@ if arquivo_dre is not None:
         col_check, col_graf = st.columns([1.2, 1])
         
         with col_check:
-            st.subheader("🚩 Status por Área")
+            st.subheader("🚩 Status por Área (Checklist)")
             
-            # Checklist de Metas
-            metrics = [
+            # Definição das Metas (Nome, Valor Atual, Meta, Se é Invertido [menor é melhor])
+            areas_status = [
                 ("Margem de Contribuição", p_margem, 30.0, False),
                 ("Perdas e Discrepâncias", p_perda, 1.5, True),
                 ("Despesas de Folha", p_folha, 12.0, True),
@@ -91,13 +96,13 @@ if arquivo_dre is not None:
                 ("Despesas Operação", p_oper, 6.0, True)
             ]
 
-            for nome, valor, meta, invertido in metrics:
-                sucesso = valor <= meta if invertido else valor >= meta
-                simbolo = "✅" if sucesso else "❌"
+            for nome, valor, meta, invertido in areas_status:
+                atingiu = valor <= meta if invertido else valor >= meta
+                simbolo = "✅" if atingiu else "❌"
                 st.markdown(f"**{simbolo} {nome}:** {valor:.2f}% (Meta: {'<' if invertido else '>'} {meta}%)")
 
             if vals['RES'] < 0:
-                st.error(f"🚨 **Resultado Operacional Crítico:** Prejuízo de R$ {abs(vals['RES']):,.2f}")
+                st.error(f"🚨 **Área Crítica:** Resultado Operacional negativo (Prejuízo).")
 
         with col_graf:
             df_plot = pd.DataFrame({
@@ -105,9 +110,9 @@ if arquivo_dre is not None:
                 "Percentual %": [p_margem, p_folha, p_oper, p_adm, p_perda]
             })
             fig_bar = px.bar(df_plot, x="Área", y="Percentual %", text_auto='.1f',
-                             title="Análise Percentual",
-                             color="Área", color_discrete_sequence=px.colors.qualitative.Safe)
+                             title="Análise de Ofensores (%)",
+                             color="Área", color_discrete_sequence=px.colors.qualitative.Prism)
             st.plotly_chart(fig_bar, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Erro ao processar DRE: {e}. Verifique se o arquivo segue o padrão esperado.")
+        st.error(f"Erro ao processar DRE: {e}")
