@@ -80,12 +80,15 @@ if arquivo_subido is not None:
             st.markdown("---")
             m1, m12, m2, m3 = st.columns(4)
             m1.metric("Venda Inicial (Mês 1)", f"R$ {projecao[0]:,.2f}", delta=f"{int(percentual_inicial*100)}% do Alvo", delta_color="normal")
+            
             v_12 = projecao[11] if len(projecao) >= 12 else 0
             perc_12 = (v_12 / valor_estudo) * 100 if valor_estudo > 0 else 0
             m12.metric("Venda 12 Meses", f"R$ {v_12:,.2f}", delta=f"{perc_12:.1f}% do Alvo", delta_color="normal")
+            
             v_final = projecao[-1]
             perc_final = (v_final / valor_estudo) * 100 if valor_estudo > 0 else 0
             m2.metric("Venda Final (Mês 36)", f"R$ {v_final:,.2f}", delta=f"{perc_final:.1f}% do Alvo", delta_color="normal")
+            
             atingiu = df_res[df_res["% Maturação"] >= 100]
             mes_mat = atingiu["Mês"].iloc[0] if not atingiu.empty else "Acima de 36m"
             m3.metric("Maturação (100%)", f"Mês {mes_mat}")
@@ -95,7 +98,7 @@ if arquivo_subido is not None:
     except Exception as e:
         st.error(f"Erro Projeção: {e}")
 
-# --- NOVA SEÇÃO: HISTÓRICO REAL 12 MESES ---
+# --- SEÇÃO: HISTÓRICO REAL 12 MESES (AJUSTADA) ---
 st.markdown("### 🏪 Histórico Real de Faturamento (Últimos 12 Meses)")
 st.sidebar.markdown("---")
 st.sidebar.header("📁 Dados Históricos")
@@ -112,31 +115,60 @@ if arquivo_historico is not None:
         else:
             df_hist = pd.read_excel(arquivo_historico)
 
-        # Seleção de Filial baseada na sua planilha (coluna Desc_Filial)
         if 'Desc_Filial' in df_hist.columns:
             filiais = sorted(df_hist['Desc_Filial'].unique())
             filial_sel = st.selectbox("Selecione a Filial para ver o Histórico Real:", filiais)
             
-            # Filtra dados da filial
             df_loja = df_hist[df_hist['Desc_Filial'] == filial_sel].copy()
-            # Ordena por AnoMes para garantir a curva correta
             df_loja = df_loja.sort_values(by='AnoMes')
 
-            # Gráfico de Histórico
-            fig_hist = px.bar(df_loja, x='AnoMes', y='Mercadoria', 
-                             title=f"Faturamento Real Mensal - {filial_sel}",
-                             labels={'Mercadoria': 'Faturamento (R$)', 'AnoMes': 'Mês/Ano'},
-                             template="plotly_white",
-                             text_auto='R$.2s')
+            # --- TRADUÇÃO DOS MESES PARA PORTUGUÊS ---
+            meses_map = {
+                '01': 'Jan', '02': 'Fev', '03': 'Mar', '04': 'Abr',
+                '05': 'Mai', '06': 'Jun', '07': 'Jul', '08': 'Ago',
+                '09': 'Set', '10': 'Out', '11': 'Nov', '12': 'Dez'
+            }
             
-            fig_hist.update_traces(marker_color='#3366CC')
-            fig_hist.update_layout(yaxis_tickformat="R$,.2f")
+            def formatar_mes_pt(anomes):
+                try:
+                    # Suporta formatos '2025-04' ou '202504'
+                    if '-' in str(anomes):
+                        ano, mes = str(anomes).split('-')
+                    else:
+                        ano, mes = str(anomes)[:4], str(anomes)[4:]
+                    return f"{meses_map[mes]}/{ano[2:]}"
+                except:
+                    return str(anomes)
+
+            df_loja['Mes_PT'] = df_loja['AnoMes'].apply(formatar_mes_pt)
+            
+            # Formatação de Moeda Brasileira para o texto das barras
+            df_loja['Valor_Texto'] = df_loja['Mercadoria'].apply(
+                lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+            )
+
+            # Gráfico de Histórico
+            fig_hist = px.bar(df_loja, x='Mes_PT', y='Mercadoria', 
+                             title=f"Faturamento Real Mensal - {filial_sel}",
+                             labels={'Mercadoria': 'Faturamento (R$)', 'Mes_PT': 'Mês'},
+                             template="plotly_white",
+                             text='Valor_Texto') 
+            
+            fig_hist.update_traces(
+                marker_color='#3366CC',
+                textposition='outside' 
+            )
+            
+            fig_hist.update_layout(
+                yaxis_tickformat="R$,.2f",
+                xaxis_title=None,
+                margin=dict(t=50, b=50)
+            )
             
             st.plotly_chart(fig_hist, use_container_width=True)
             
-            # Tabela de apoio rápida
             with st.expander("Ver dados detalhados do histórico"):
-                st.table(df_loja[['AnoMes', 'Mercadoria']].style.format({'Mercadoria': 'R$ {:,.2f}'}))
+                st.table(df_loja[['Mes_PT', 'Mercadoria']].style.format({'Mercadoria': 'R$ {:,.2f}'}))
         else:
             st.error("A planilha de histórico deve conter a coluna 'Desc_Filial'.")
             
