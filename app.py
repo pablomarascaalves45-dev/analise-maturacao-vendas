@@ -6,6 +6,22 @@ import io
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="Curva de Maturação", layout="wide")
 
+# CSS para forçar o comportamento de "congelar" as linhas de destaque
+st.markdown("""
+    <style>
+    /* Garante que o container da tabela permita o sticky das linhas */
+    .stDataFrame div[data-testid="stTable"] {
+        overflow: visible !important;
+    }
+    thead tr th {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background-color: white;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.title("Projeção de Maturação: Analisador de Dados")
 st.markdown("---")
 
@@ -17,7 +33,6 @@ arquivo_subido = st.sidebar.file_uploader(
     key="proj_file"
 )
 
-# Inicializa variável de taxas para evitar erro de escopo
 taxas = []
 
 if arquivo_subido is not None:
@@ -29,7 +44,6 @@ if arquivo_subido is not None:
 
         df_growth = df_growth.dropna(axis=1, how='all')
 
-        # --- PARÂMETROS ---
         st.sidebar.header("Configurações da Projeção")
         valor_estudo = st.sidebar.number_input(
             "Venda Alvo (Estudo 100%):", 
@@ -38,7 +52,6 @@ if arquivo_subido is not None:
             step=10000.0
         )
         
-        # Filtragem por estado
         estados_alvo = ["RS", "SC", "PR"]
         colunas_disponiveis = [c for c in df_growth.columns if any(est in str(c) for est in estados_alvo)]
         
@@ -66,7 +79,6 @@ if arquivo_subido is not None:
             df_res["% Maturação"] = (df_res["Faturamento"] / valor_estudo) * 100
             meses_grafico = [1, 3, 6, 9, 12, 18, 24, 30, 36]
 
-            # --- DASHBOARD DE PROJEÇÃO ---
             c1, c2 = st.columns([2, 1])
             with c1:
                 fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
@@ -216,7 +228,6 @@ if arquivo_dre is not None:
 
         vals = {k: pegar_v(k) for k in termos.keys()}
 
-        # 1. INDICADORES PRINCIPAIS
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
         c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
@@ -227,7 +238,6 @@ if arquivo_dre is not None:
         perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
         c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
 
-        # 2. DIAGNÓSTICO
         st.subheader("Análise de Performance Operacional")
         col_diag, col_graf = st.columns([1, 1])
         
@@ -259,13 +269,11 @@ if arquivo_dre is not None:
                                    color_discrete_sequence=px.colors.sequential.RdBu)
             st.plotly_chart(fig_ofensores, use_container_width=True)
 
-        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM ESTILIZAÇÃO ---
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
         
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-        # Identificação dinâmica de colunas
         colunas_avri = []
         colunas_realizado = []
         
@@ -276,7 +284,6 @@ if arquivo_dre is not None:
             if cabecalho_texto.str.contains("REALIZADO").any():
                 colunas_realizado.append(df_exibicao.columns[col_idx])
 
-        # Formatadores
         def formatador_porcentagem(val):
             if val == "" or val == "-" or val == " ": return val
             try:
@@ -291,7 +298,6 @@ if arquivo_dre is not None:
                 return f"{int(round(num)):,}".replace(',', '.')
             except: return val
 
-        # Lógica de Destaque
         contas_destaque = [
             "Receita Bruta", "Deduções", "Receita Líquida", "CMV", 
             "Perdas Vencidos Liquido", "Discrepância _ Estoque", 
@@ -301,15 +307,13 @@ if arquivo_dre is not None:
 
         def estilo_linhas_mestre(row):
             texto_celula = str(row.iloc[1]).strip()
-            # Verifica se o nome da conta está presente na lista de destaque
+            # Se for uma conta de destaque, aplica Sticky e Z-index
             if any(conta.lower() in texto_celula.lower() for conta in contas_destaque):
-                # Azul claro de fundo, negrito e uma borda inferior para o efeito de sombra
-                return ['background-color: #f0f7ff; font-weight: bold; border-bottom: 1.5px solid #d1dbe5;'] * len(row)
+                return ['background-color: #f0f7ff; font-weight: bold; border-bottom: 1.5px solid #d1dbe5; position: sticky; top: 0px; z-index: 5;'] * len(row)
             return [''] * len(row)
 
         col_pct_alvo = list(set([2] + colunas_avri))
         
-        # Aplicação final do Style e Dataframe
         df_estilizado = (
             df_exibicao.style
             .apply(estilo_linhas_mestre, axis=1)
@@ -317,7 +321,8 @@ if arquivo_dre is not None:
             .format(subset=colunas_realizado, formatter=formatador_inteiro)
         )
 
-        st.dataframe(df_estilizado, use_container_width=True, hide_index=True)
+        # Definir uma altura fixa (height=600) para permitir a rolagem interna e o efeito sticky
+        st.dataframe(df_estilizado, use_container_width=True, hide_index=True, height=600)
 
     except Exception as e:
         st.error(f"Erro no processamento do DRE: {e}")
