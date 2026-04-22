@@ -237,7 +237,7 @@ if arquivo_dre is not None:
         cor_cmv = "inverse" if perc_cmv > 65 else "normal"
         c5.metric("CMV", f"R$ {cmv_total:,.2f}", delta=f"{perc_cmv:.2f}%", delta_color=cor_cmv)
 
-        # --- AJUSTE SOLICITADO: CÁLCULOS BASEADOS NA VENDA LÍQUIDA ---
+        # --- CÁLCULOS BASEADOS NA VENDA LÍQUIDA ---
         perc_folha = (abs(vals['FOLHA']) / receita_base * 100) if receita_base > 0 else 0
         perc_adm = (abs(vals['ADM']) / receita_base * 100) if receita_base > 0 else 0
         perc_oper = (abs(vals['OPER']) / receita_base * 100) if receita_base > 0 else 0
@@ -256,7 +256,8 @@ if arquivo_dre is not None:
                 st.warning(f"Margem Abaixo da Meta ({perc_margem:.2f}%): A meta é 35%.")
             
             if perc_perda > 1.5:
-                st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): Acima do limite de 1.5%.")
+                # ALTERAÇÃO SOLICITADA: Somente texto alterado, mantendo o limite técnico de 1.5
+                st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): A meta é 0,66%.")
 
         with col_graf:
             df_gastos = pd.DataFrame({
