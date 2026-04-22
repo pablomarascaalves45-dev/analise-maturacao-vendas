@@ -164,9 +164,9 @@ if arquivo_historico is not None:
                              text='Valor_Texto') 
 
             fig_hist.add_scatter(x=df_loja['Mes_PT'], y=df_loja['Crescimento_Esperado'], 
-                                mode='lines+markers', 
-                                name='Projeção Base Estado',
-                                line=dict(color='orange', width=3))
+                                 mode='lines+markers', 
+                                 name='Projeção Base Estado',
+                                 line=dict(color='orange', width=3))
             
             fig_hist.update_traces(marker_color='#3366CC', textposition='outside', selector=dict(type='bar'))
             fig_hist.update_layout(yaxis_tickformat="R$,.2f", xaxis_title=None, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
@@ -259,53 +259,48 @@ if arquivo_dre is not None:
                                    color_discrete_sequence=px.colors.sequential.RdBu)
             st.plotly_chart(fig_ofensores, use_container_width=True)
 
-        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM FORMATAÇÃO CORRIGIDA ---
+        # --- TABELA DE DADOS FINANCEIROS DETALHADA ---
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
         
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-        # Identificação de colunas alvo por nome no cabeçalho
+        # Identificação dinâmica de colunas (AV-RI / AV-RL / REALIZADO)
         colunas_avri = []
         colunas_realizado = []
         
         for col_idx in range(len(df_exibicao.columns)):
-            # Varre as 3 primeiras linhas para identificar o título da coluna
-            cabecalho_texto = df_exibicao.iloc[0:3, col_idx].astype(str).str.upper()
-            if cabecalho_texto.str.contains("AV-RI").any():
+            # Varre as 4 primeiras linhas para capturar o cabeçalho
+            cabecalho_texto = df_exibicao.iloc[0:4, col_idx].astype(str).str.upper()
+            if cabecalho_texto.str.contains("AV-RI").any() or cabecalho_texto.str.contains("AV-RL").any():
                 colunas_avri.append(df_exibicao.columns[col_idx])
             if cabecalho_texto.str.contains("REALIZADO").any():
                 colunas_realizado.append(df_exibicao.columns[col_idx])
 
-        # Funções de formatação melhoradas
+        # Funções de formatação específicas para evitar erros de string
         def formatador_porcentagem(val):
+            if val == "" or val == "-" or val == " ": return val
             try:
-                if val == "" or val == "-" or isinstance(val, str): 
-                    # Tenta converter string para número se for possível
-                    num = pd.to_numeric(val, errors='coerce')
-                else:
-                    num = val
-                
-                if pd.notnull(num) and isinstance(num, (int, float)):
-                    return f"{num * 100:.2f}%".replace('.', ',')
-                return val
-            except: 
+                # Converte para número, multiplica por 100 e formata
+                num = float(str(val).replace(',', '.'))
+                return f"{num * 100:.2f}%".replace('.', ',')
+            except:
                 return val
 
         def formatador_inteiro(val):
+            if val == "" or val == "-" or val == " ": return val
             try:
-                num = pd.to_numeric(val, errors='coerce')
-                if pd.notnull(num) and not isinstance(val, str):
-                    return f"{int(round(num)):,}".replace(',', '.')
-                return val
-            except: 
+                num = float(str(val).replace(',', '.'))
+                return f"{int(round(num)):,}".replace(',', '.')
+            except:
                 return val
 
-        # Aplicar estilos: Coluna 2 fixo (%Meta) + dinâmicas AV-RI
-        colunas_pct_final = list(set([2] + colunas_avri))
+        # Definição das colunas de porcentagem (Coluna 2 fixo + colunas AV dinâmicas)
+        col_pct_alvo = list(set([2] + colunas_avri))
         
+        # Exibição final com os formatadores corrigidos
         st.dataframe(
-            df_exibicao.style.format(subset=colunas_pct_final, formatter=formatador_porcentagem)
+            df_exibicao.style.format(subset=col_pct_alvo, formatter=formatador_porcentagem)
                              .format(subset=colunas_realizado, formatter=formatador_inteiro), 
             use_container_width=True, 
             hide_index=True
