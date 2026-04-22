@@ -256,5 +256,11 @@ if arquivo_dre is not None:
                                    color_discrete_sequence=px.colors.sequential.RdBu)
             st.plotly_chart(fig_ofensores, use_container_width=True)
 
+        # --- TABELA DE DADOS FINANCEIROS DETALHADA ---
+        st.markdown("---")
+        st.subheader("Tabela de Dados Financeiros Detalhada")
+        df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
+        st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
+
     except Exception as e:
         st.error(f"Erro no processamento do DRE: {e}")
