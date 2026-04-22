@@ -184,13 +184,11 @@ arquivo_dre = st.sidebar.file_uploader(
 
 if arquivo_dre is not None:
     try:
-        # Carregamos sem header primeiro para localizar a linha real dos títulos
+        # Carrega ignorando as linhas iniciais de títulos mesclados (ajusta conforme a imagem)
         df_raw = pd.read_excel(arquivo_dre, header=None)
         
-        # Localiza a linha onde começa 'Relato_Linha'
+        # Localiza a linha correta onde começam as colunas (Relato_Seq, Relato_Linha...)
         linha_cabecalho = df_raw[df_raw.iloc[:, 1].astype(str).str.contains("Relato_Linha", na=False)].index[0]
-        
-        # Refaz o DataFrame a partir dessa linha
         df_dre_raw = pd.read_excel(arquivo_dre, skiprows=linha_cabecalho)
         
         termos = {
@@ -205,7 +203,6 @@ if arquivo_dre is not None:
         }
 
         indices = {}
-        # Usamos a coluna 'Relato_Linha' que agora é o cabeçalho correto
         for chave, texto in termos.items():
             match = df_dre_raw[df_dre_raw['Relato_Linha'].astype(str).str.strip().str.contains(texto, case=False, na=False)]
             if not match.empty:
@@ -213,7 +210,6 @@ if arquivo_dre is not None:
 
         def pegar_v(chave):
             if chave in indices:
-                # O valor agora é buscado na coluna 'Total' de forma segura
                 val = df_dre_raw.loc[indices[chave], 'Total'] 
                 return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
             return 0.0
@@ -233,7 +229,6 @@ if arquivo_dre is not None:
 
         # 2. DIAGNÓSTICO
         st.subheader("Análise de Performance Operacional")
-        
         col_diag, col_graf = st.columns([1, 1])
         
         with col_diag:
@@ -267,18 +262,17 @@ if arquivo_dre is not None:
         # --- TABELA DE DADOS FINANCEIROS DETALHADA ---
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
-        
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna(0)
         
+        # Ajuste para formatar colunas mesmo que o pandas as renomeie (ex: AV-Rl.1, AV-Rl.2)
         formatos = {}
         for col in df_exibicao.columns:
-            nome_col = str(col)
-            if "AV-Rl" in nome_col or "%Meta" in nome_col:
+            if "AV-Rl" in str(col) or "%Meta" in str(col):
                 formatos[col] = "{:.2%}"
-            elif "Realizado" in nome_col or "Total" in nome_col:
-                # Se for numérico, retira decimais, se for texto mantém
+            elif "Realizado" in str(col) or "Total" in str(col):
+                # Só formata como inteiro se a coluna for numérica
                 if pd.api.types.is_numeric_dtype(df_exibicao[col]):
-                    formatos[col] = "{:.0f}"
+                    formatos[col] = "{:,.0f}"
 
         st.dataframe(
             df_exibicao.style.format(formatos, na_rep="-"), 
