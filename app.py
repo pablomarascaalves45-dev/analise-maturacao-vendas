@@ -212,16 +212,16 @@ if arquivo_dre is not None:
 
         vals = {k: pegar_v(k) for k in termos.keys()}
 
-        # BUSCA ADICIONAL PARA O CMV TOTAL (Para a nova métrica)
+        # BUSCA ADICIONAL PARA O CMV (Para a nova métrica)
         match_cmv = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains("CMV", case=False, na=False)]
         cmv_total = 0.0
         if not match_cmv.empty:
             val_cmv = df_dre_raw.iloc[match_cmv.index[0], 3]
             cmv_total = pd.to_numeric(val_cmv, errors='coerce') if pd.notnull(val_cmv) else 0.0
 
-        # MÉTRICAS COM CMV ADICIONADO
+        # MÉTRICAS COM RÓTULOS AJUSTADOS (Receita Bruta e CMV)
         c1, c2, c3, c4, c5 = st.columns(5) 
-        c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
+        c1.metric("Receita Bruta", f"R$ {vals['RB']:,.2f}")
         c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
         
         res_cor = "normal" if vals['RES'] >= 0 else "inverse"
@@ -229,7 +229,7 @@ if arquivo_dre is not None:
         
         perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
         c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
-        c5.metric("CMV Total", f"R$ {cmv_total:,.2f}")
+        c5.metric("CMV", f"R$ {cmv_total:,.2f}")
 
         st.subheader("Análise de Performance Operacional")
         col_diag, col_graf = st.columns([1, 1])
@@ -291,7 +291,7 @@ if arquivo_dre is not None:
                 return f"{int(round(num)):,}".replace(',', '.')
             except: return val
 
-        # LÓGICA DE DESTAQUE DAS LINHAS POR CONTA FINANCEIRA (Mantida conforme solicitado)
+        # LÓGICA DE DESTAQUE DAS LINHAS POR CONTA FINANCEIRA
         contas_destaque = [
             "Receita Bruta", "Deduções", "Receita Líquida", "CMV", 
             "Perdas Vencidos Liquido", "Discrepância _ Estoque", 
