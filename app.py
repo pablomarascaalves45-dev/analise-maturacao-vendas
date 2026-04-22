@@ -184,8 +184,14 @@ arquivo_dre = st.sidebar.file_uploader(
 
 if arquivo_dre is not None:
     try:
-        # Carregar mantendo a primeira linha como cabeçalho para facilitar formatação das colunas
-        df_dre_raw = pd.read_excel(arquivo_dre)
+        # Carregamos sem header primeiro para localizar a linha real dos títulos
+        df_raw = pd.read_excel(arquivo_dre, header=None)
+        
+        # Localiza a linha onde começa 'Relato_Linha'
+        linha_cabecalho = df_raw[df_raw.iloc[:, 1].astype(str).str.contains("Relato_Linha", na=False)].index[0]
+        
+        # Refaz o DataFrame a partir dessa linha
+        df_dre_raw = pd.read_excel(arquivo_dre, skiprows=linha_cabecalho)
         
         termos = {
             "RB": "Receita Bruta",
@@ -198,18 +204,17 @@ if arquivo_dre is not None:
             "RES": "Resultado Operacional"
         }
 
-        # Busca os índices baseada no conteúdo da coluna 'Relato_Linha' (ou coluna 1)
         indices = {}
-        col_busca = df_dre_raw.iloc[:, 1].astype(str).str.strip()
+        # Usamos a coluna 'Relato_Linha' que agora é o cabeçalho correto
         for chave, texto in termos.items():
-            match = df_dre_raw[col_busca.str.contains(texto, case=False, na=False)]
+            match = df_dre_raw[df_dre_raw['Relato_Linha'].astype(str).str.strip().str.contains(texto, case=False, na=False)]
             if not match.empty:
                 indices[chave] = match.index[0]
 
         def pegar_v(chave):
             if chave in indices:
-                # Pega o valor da coluna 'Total' (geralmente coluna 3 ou 4)
-                val = df_dre_raw.iloc[indices[chave], 3] 
+                # O valor agora é buscado na coluna 'Total' de forma segura
+                val = df_dre_raw.loc[indices[chave], 'Total'] 
                 return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
             return 0.0
 
@@ -233,7 +238,6 @@ if arquivo_dre is not None:
         
         with col_diag:
             st.write("Alertas de Indicadores:")
-            
             if vals['RES'] < 0:
                 st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
             
@@ -264,16 +268,17 @@ if arquivo_dre is not None:
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
         
-        # Preparação do DataFrame de exibição
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna(0)
         
-        # Dicionário de formatação dinâmica baseado nos nomes das colunas
         formatos = {}
         for col in df_exibicao.columns:
-            if "AV-Rl" in str(col) or "%Meta" in str(col):
-                formatos[col] = "{:.2%}" # Exibe como porcentagem
-            elif "Realizado" in str(col) or "Total" in str(col):
-                formatos[col] = "{:.0f}" # Exibe como número inteiro (sem vírgula)
+            nome_col = str(col)
+            if "AV-Rl" in nome_col or "%Meta" in nome_col:
+                formatos[col] = "{:.2%}"
+            elif "Realizado" in nome_col or "Total" in nome_col:
+                # Se for numérico, retira decimais, se for texto mantém
+                if pd.api.types.is_numeric_dtype(df_exibicao[col]):
+                    formatos[col] = "{:.0f}"
 
         st.dataframe(
             df_exibicao.style.format(formatos, na_rep="-"), 
