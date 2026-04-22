@@ -184,7 +184,8 @@ arquivo_dre = st.sidebar.file_uploader(
 
 if arquivo_dre is not None:
     try:
-        df_dre_raw = pd.read_excel(arquivo_dre, header=None)
+        # Carregar mantendo a primeira linha como cabeçalho para facilitar formatação das colunas
+        df_dre_raw = pd.read_excel(arquivo_dre)
         
         termos = {
             "RB": "Receita Bruta",
@@ -197,14 +198,17 @@ if arquivo_dre is not None:
             "RES": "Resultado Operacional"
         }
 
+        # Busca os índices baseada no conteúdo da coluna 'Relato_Linha' (ou coluna 1)
         indices = {}
+        col_busca = df_dre_raw.iloc[:, 1].astype(str).str.strip()
         for chave, texto in termos.items():
-            match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(texto, case=False, na=False)]
+            match = df_dre_raw[col_busca.str.contains(texto, case=False, na=False)]
             if not match.empty:
                 indices[chave] = match.index[0]
 
         def pegar_v(chave):
             if chave in indices:
+                # Pega o valor da coluna 'Total' (geralmente coluna 3 ou 4)
                 val = df_dre_raw.iloc[indices[chave], 3] 
                 return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
             return 0.0
@@ -259,8 +263,23 @@ if arquivo_dre is not None:
         # --- TABELA DE DADOS FINANCEIROS DETALHADA ---
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
-        df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
-        st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
+        
+        # Preparação do DataFrame de exibição
+        df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna(0)
+        
+        # Dicionário de formatação dinâmica baseado nos nomes das colunas
+        formatos = {}
+        for col in df_exibicao.columns:
+            if "AV-Rl" in str(col) or "%Meta" in str(col):
+                formatos[col] = "{:.2%}" # Exibe como porcentagem
+            elif "Realizado" in str(col) or "Total" in str(col):
+                formatos[col] = "{:.0f}" # Exibe como número inteiro (sem vírgula)
+
+        st.dataframe(
+            df_exibicao.style.format(formatos, na_rep="-"), 
+            use_container_width=True, 
+            hide_index=True
+        )
 
     except Exception as e:
         st.error(f"Erro no processamento do DRE: {e}")
