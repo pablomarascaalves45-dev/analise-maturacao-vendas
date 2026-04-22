@@ -259,50 +259,53 @@ if arquivo_dre is not None:
                                    color_discrete_sequence=px.colors.sequential.RdBu)
             st.plotly_chart(fig_ofensores, use_container_width=True)
 
-        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM FORMATAÇÃO DINÂMICA ---
+        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM FORMATAÇÃO CORRIGIDA ---
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
         
-        # Limpeza inicial
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-        # Identificação dinâmica das colunas "AV-RI" e "Realizado"
+        # Identificação de colunas alvo por nome no cabeçalho
         colunas_avri = []
         colunas_realizado = []
         
         for col_idx in range(len(df_exibicao.columns)):
-            # Procura AV-RI no cabeçalho (3 primeiras linhas)
-            if df_exibicao.iloc[0:3, col_idx].astype(str).str.contains("AV-RI").any():
+            # Varre as 3 primeiras linhas para identificar o título da coluna
+            cabecalho_texto = df_exibicao.iloc[0:3, col_idx].astype(str).str.upper()
+            if cabecalho_texto.str.contains("AV-RI").any():
                 colunas_avri.append(df_exibicao.columns[col_idx])
-            # Procura Realizado no cabeçalho (3 primeiras linhas)
-            if df_exibicao.iloc[0:3, col_idx].astype(str).str.contains("Realizado").any():
+            if cabecalho_texto.str.contains("REALIZADO").any():
                 colunas_realizado.append(df_exibicao.columns[col_idx])
 
-        # Funções de formatação
+        # Funções de formatação melhoradas
         def formatador_porcentagem(val):
             try:
-                if val == "" or val == "-": return val
-                num = pd.to_numeric(val, errors='coerce')
-                if pd.notnull(num) and not isinstance(val, str):
+                if val == "" or val == "-" or isinstance(val, str): 
+                    # Tenta converter string para número se for possível
+                    num = pd.to_numeric(val, errors='coerce')
+                else:
+                    num = val
+                
+                if pd.notnull(num) and isinstance(num, (int, float)):
                     return f"{num * 100:.2f}%".replace('.', ',')
                 return val
-            except: return val
+            except: 
+                return val
 
         def formatador_inteiro(val):
             try:
-                if val == "" or val == "-": return val
                 num = pd.to_numeric(val, errors='coerce')
                 if pd.notnull(num) and not isinstance(val, str):
-                    # Formata como inteiro com separador de milhar (ponto)
                     return f"{int(round(num)):,}".replace(',', '.')
                 return val
-            except: return val
+            except: 
+                return val
 
-        # Aplicação dos estilos
-        colunas_pct = list(set([2] + colunas_avri)) # Coluna 2 (%Meta) + colunas AV-RI
+        # Aplicar estilos: Coluna 2 fixo (%Meta) + dinâmicas AV-RI
+        colunas_pct_final = list(set([2] + colunas_avri))
         
         st.dataframe(
-            df_exibicao.style.format(subset=colunas_pct, formatter=formatador_porcentagem)
+            df_exibicao.style.format(subset=colunas_pct_final, formatter=formatador_porcentagem)
                              .format(subset=colunas_realizado, formatter=formatador_inteiro), 
             use_container_width=True, 
             hide_index=True
