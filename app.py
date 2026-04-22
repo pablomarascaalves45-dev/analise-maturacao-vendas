@@ -74,7 +74,6 @@ if arquivo_subido is not None:
                 
             with c2:
                 st.subheader("Marcos de Maturação")
-                # Ajustado para 2 casas decimais no faturamento
                 st.dataframe(df_res.style.format({"Faturamento": "R$ {:,.2f}", "% Maturação": "{:.2f}%"}),
                             height=450, use_container_width=True, hide_index=True)
 
@@ -84,12 +83,10 @@ if arquivo_subido is not None:
             
             v_12 = projecao[11] if len(projecao) >= 12 else 0
             perc_12 = (v_12 / valor_estudo) * 100 if valor_estudo > 0 else 0
-            # Ajustado para 2 casas decimais no delta
             m12.metric("Venda 12 Meses", f"R$ {v_12:,.2f}", delta=f"{perc_12:.2f}% do Alvo")
             
             v_final = projecao[-1]
             perc_final = (v_final / valor_estudo) * 100 if valor_estudo > 0 else 0
-            # Ajustado para 2 casas decimais no delta
             m2.metric("Venda Final (Mês 36)", f"R$ {v_final:,.2f}", delta=f"{perc_final:.2f}% do Alvo")
             
             atingiu = df_res[df_res["% Maturação"] >= 100]
@@ -216,6 +213,7 @@ if arquivo_dre is not None:
 
         vals = {k: pegar_v(k) for k in termos.keys()}
 
+        # Base de cálculo definida como Receita Líquida (ou Bruta se líquida for zero)
         receita_base = vals['RL'] if vals['RL'] > 0 else vals['RB']
 
         match_cmv = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains("CMV", case=False, na=False)]
@@ -237,25 +235,27 @@ if arquivo_dre is not None:
 
         perc_cmv = (abs(cmv_total) / receita_base * 100) if receita_base > 0 else 0
         cor_cmv = "inverse" if perc_cmv > 65 else "normal"
-        # Ajustado para 2 casas decimais no delta do CMV
         c5.metric("CMV", f"R$ {cmv_total:,.2f}", delta=f"{perc_cmv:.2f}%", delta_color=cor_cmv)
+
+        # --- AJUSTE SOLICITADO: CÁLCULOS BASEADOS NA VENDA LÍQUIDA ---
+        perc_folha = (abs(vals['FOLHA']) / receita_base * 100) if receita_base > 0 else 0
+        perc_adm = (abs(vals['ADM']) / receita_base * 100) if receita_base > 0 else 0
+        perc_oper = (abs(vals['OPER']) / receita_base * 100) if receita_base > 0 else 0
+        perc_perda = (perdas_totais / receita_base * 100) if receita_base > 0 else 0
+        perc_margem = (vals['MC'] / receita_base * 100) if receita_base > 0 else 0
 
         st.subheader("Análise de Performance Operacional")
         col_diag, col_graf = st.columns([1, 1])
         
         with col_diag:
-            st.write("Alertas de Indicadores:")
+            st.write("Alertas de Indicadores (Base: Receita Líquida):")
             if vals['RES'] < 0:
                 st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
             
-            perc_margem = (vals['MC'] / receita_base * 100) if receita_base > 0 else 0
             if perc_margem < 35:
-                # Ajustado para 2 casas decimais no alerta de margem
                 st.warning(f"Margem Abaixo da Meta ({perc_margem:.2f}%): A meta é 35%.")
             
-            perc_perda = (perdas_totais / receita_base * 100) if receita_base > 0 else 0
             if perc_perda > 1.5:
-                # Já estava com 2, mantido.
                 st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): Acima do limite de 1.5%.")
 
         with col_graf:
@@ -265,8 +265,9 @@ if arquivo_dre is not None:
             }).sort_values(by="Valor", ascending=False)
             
             fig_ofensores = px.pie(df_gastos, values='Valor', names='Conta', 
-                                   title="Composição de Gastos Operacionais",
+                                   title="Composição de Gastos Operacionais (% sobre Receita Líquida)",
                                    color_discrete_sequence=px.colors.sequential.RdBu)
+            fig_ofensores.update_traces(textinfo='percent+label')
             st.plotly_chart(fig_ofensores, use_container_width=True)
 
         st.markdown("---")
@@ -294,12 +295,10 @@ if arquivo_dre is not None:
                 return f"{num * 100:.2f}%".replace('.', ',')
             except: return val
 
-        # Alterado para formatador de FLOAT com 2 casas decimais e separador de milhar
         def formatador_decimal(val):
             if val == "" or val == "-" or val == " ": return val
             try:
                 num = float(str(val).replace(',', '.'))
-                # Formata com 2 casas decimais e usa ponto como separador de milhar
                 return f"{num:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
             except: return val
 
@@ -322,7 +321,7 @@ if arquivo_dre is not None:
             df_exibicao.style
             .apply(estilo_linhas_mestre, axis=1)
             .format(subset=col_pct_alvo, formatter=formatador_porcentagem)
-            .format(subset=colunas_realizado, formatter=formatador_decimal) # Aplica o novo formatador decimal
+            .format(subset=colunas_realizado, formatter=formatador_decimal)
         )
 
         st.dataframe(df_estilizado, use_container_width=True, hide_index=True)
