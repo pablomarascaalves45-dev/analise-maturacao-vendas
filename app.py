@@ -9,16 +9,13 @@ st.set_page_config(page_title="Curva de Maturação", layout="wide")
 st.title("Projeção de Maturação: Analisador de Dados")
 st.markdown("---")
 
-# 2. ENTRADA DE DADOS DE PROJEÇÃO (TAXAS)
+# 2. ENTRADA DE DADOS DE PROJEÇÃO
 st.sidebar.header("Dados de Projeção")
 arquivo_subido = st.sidebar.file_uploader(
     "Upload da planilha de Taxas de Crescimento:", 
     type=["xlsx", "xls", "csv"],
     key="proj_file"
 )
-
-taxas = [] # Inicializa vazio para evitar erro caso o arquivo não seja carregado
-estado_sel = ""
 
 if arquivo_subido is not None:
     try:
@@ -65,7 +62,7 @@ if arquivo_subido is not None:
             df_res["% Maturação"] = (df_res["Faturamento"] / valor_estudo) * 100
             meses_grafico = [1, 3, 6, 9, 12, 18, 24, 30, 36]
 
-            # --- DASHBOARD DE PROJEÇÃO ---
+            # --- DASHBOARD ---
             c1, c2 = st.columns([2, 1])
             with c1:
                 fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
@@ -127,7 +124,7 @@ if arquivo_historico is not None:
             esperado = [venda_inicial_real]
             
             for i in range(1, len(df_loja)):
-                if len(taxas) > i:
+                if i < len(taxas):
                     proximo_valor = esperado[-1] * (1 + taxas[i])
                     esperado.append(proximo_valor)
                 else:
@@ -143,11 +140,10 @@ if arquivo_historico is not None:
             
             def formatar_mes_pt(anomes):
                 try:
-                    s_anomes = str(anomes)
-                    if '-' in s_anomes:
-                        ano, mes = s_anomes.split('-')[:2]
+                    if '-' in str(anomes):
+                        ano, mes = str(anomes).split('-')
                     else:
-                        ano, mes = s_anomes[:4], s_anomes[4:6]
+                        ano, mes = str(anomes)[:4], str(anomes)[4:]
                     return f"{meses_map[mes]}/{ano[2:]}"
                 except: return str(anomes)
 
@@ -157,7 +153,7 @@ if arquivo_historico is not None:
             )
 
             fig_hist = px.bar(df_loja, x='Mes_PT', y='Mercadoria', 
-                             title=f"Histórico Real vs Projeção de Crescimento - {filial_sel}",
+                             title=f"Histórico Real vs Projeção de Crescimento ({estado_sel}) - {filial_sel}",
                              labels={'Mercadoria': 'Faturamento Real', 'Mes_PT': 'Período'},
                              template="plotly_white",
                              text='Valor_Texto') 
@@ -168,8 +164,7 @@ if arquivo_historico is not None:
                                 line=dict(color='orange', width=3))
             
             fig_hist.update_traces(marker_color='#3366CC', textposition='outside', selector=dict(type='bar'))
-            fig_hist.update_layout(yaxis_tickformat="R$,.2f", xaxis_title=None, 
-                                   legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            fig_hist.update_layout(yaxis_tickformat="R$,.2f", xaxis_title=None, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
             st.plotly_chart(fig_hist, use_container_width=True)
             
     except Exception as e:
@@ -189,81 +184,83 @@ arquivo_dre = st.sidebar.file_uploader(
 
 if arquivo_dre is not None:
     try:
-        # 1. Localização dinâmica do cabeçalho
-        df_raw = pd.read_excel(arquivo_dre, header=None)
-        linhas_cab = df_raw[df_raw.iloc[:, 1].astype(str).str.contains("Relato_Linha", na=False)]
+        df_dre_raw = pd.read_excel(arquivo_dre, header=None)
         
-        if linhas_cab.empty:
-            st.error("Erro: Coluna 'Relato_Linha' não encontrada no DRE.")
-        else:
-            idx_cab = linhas_cab.index[0]
-            df_dre_raw = pd.read_excel(arquivo_dre, skiprows=idx_cab)
-            df_dre_raw.columns = [str(c).strip() for c in df_dre_raw.columns]
+        termos = {
+            "RB": "Receita Bruta",
+            "MC": "Margem de Contribuição",
+            "PVL": "Perdas Vencidos Liquido",
+            "DISC": "Discrepância _ Estoque",
+            "FOLHA": "Despesas Folha",
+            "ADM": "Despesas ADM",
+            "OPER": "Despesas Operação",
+            "RES": "Resultado Operacional"
+        }
 
-            # 2. Definição de Termos e Busca de Índices
-            termos = {
-                "RB": "Receita Bruta", "MC": "Margem de Contribuição",
-                "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque",
-                "FOLHA": "Despesas Folha", "ADM": "Despesas ADM",
-                "OPER": "Despesas Operação", "RES": "Resultado Operacional"
-            }
+        indices = {}
+        for chave, texto in termos.items():
+            match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(texto, case=False, na=False)]
+            if not match.empty:
+                indices[chave] = match.index[0]
 
-            indices = {}
-            for chave, texto in termos.items():
-                match = df_dre_raw[df_dre_raw['Relato_Linha'].astype(str).str.contains(texto, case=False, na=False)]
-                if not match.empty:
-                    indices[chave] = match.index[0]
+        def pegar_v(chave):
+            if chave in indices:
+                val = df_dre_raw.iloc[indices[chave], 3] 
+                return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
+            return 0.0
 
-            # 3. Função de Captura Segura (evita IndexError e lida com colunas duplicadas)
-            def pegar_v(chave):
-                if chave in indices and "Total" in df_dre_raw.columns:
-                    val = df_dre_raw.loc[indices[chave], "Total"]
-                    if isinstance(val, pd.Series): # Se houver mais de uma coluna "Total"
-                        val = val.iloc[0]
-                    return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
-                return 0.0
+        vals = {k: pegar_v(k) for k in termos.keys()}
 
-            vals = {k: pegar_v(k) for k in termos.keys()}
+        # 1. INDICADORES PRINCIPAIS
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
+        c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
+        
+        res_cor = "normal" if vals['RES'] >= 0 else "inverse"
+        c3.metric("Resultado Operacional", f"R$ {vals['RES']:,.2f}", delta_color=res_cor)
+        
+        perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
+        c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
 
-            # 4. Exibição de Métricas
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
-            c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
-            res_cor = "normal" if vals['RES'] >= 0 else "inverse"
-            c3.metric("Resultado Operacional", f"R$ {vals['RES']:,.2f}", delta_color=res_cor)
-            perdas_tot = abs(vals['PVL']) + abs(vals['DISC'])
-            c4.metric("Perdas/Quebras", f"R$ {perdas_tot:,.2f}")
-
-            # 5. Gráfico de Ofensores
-            st.subheader("Análise Operacional")
-            col_diag, col_graf = st.columns([1, 1])
-            with col_diag:
-                if vals['RES'] < 0: st.error(f"Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
-                pm = (vals['MC'] / vals['RB'] * 100) if vals['RB'] > 0 else 0
-                if pm < 30: st.warning(f"Margem baixa: {pm:.1f}% (Meta 30%).")
-                pp = (perdas_tot / vals['RB'] * 100) if vals['RB'] > 0 else 0
-                if pp > 1.5: st.warning(f"Quebra alta: {pp:.2f}% (Limite 1.5%).")
+        # 2. DIAGNÓSTICO
+        st.subheader("Análise de Performance Operacional")
+        
+        col_diag, col_graf = st.columns([1, 1])
+        
+        with col_diag:
+            st.write("Alertas de Indicadores:")
             
-            with col_graf:
-                df_g = pd.DataFrame({
-                    "Conta": ["Folha", "ADM", "Operação", "Quebras"],
-                    "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_tot]
-                })
-                fig_p = px.pie(df_g, values='Valor', names='Conta', title="Gastos Operacionais", hole=0.4)
-                st.plotly_chart(fig_p, use_container_width=True)
-
-            # 6. Tabela Formatada Dinamicamente
-            st.markdown("---")
-            st.subheader("Detalhamento Financeiro")
-            df_exib = df_dre_raw.dropna(axis=1, how='all').fillna(0)
+            if vals['RES'] < 0:
+                st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
             
-            fmt = {}
-            for col in df_exib.columns:
-                if any(x in str(col) for x in ["AV-Rl", "%Meta"]): fmt[col] = "{:.2%}"
-                elif any(x in str(col) for x in ["Realizado", "Total"]):
-                    if pd.api.types.is_numeric_dtype(df_exib[col]): fmt[col] = "{:,.0f}"
+            perc_margem = (vals['MC'] / vals['RB'] * 100) if vals['RB'] > 0 else 0
+            if perc_margem < 30:
+                st.warning(f"Margem Abaixo da Meta ({perc_margem:.1f}%): Referência de mercado é 30%.")
+            
+            perc_perda = (perdas_totais / vals['RB'] * 100) if vals['RB'] > 0 else 0
+            if perc_perda > 1.5:
+                st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): Acima do limite de 1.5%.")
 
-            st.dataframe(df_exib.style.format(fmt, na_rep="-"), use_container_width=True, hide_index=True)
+            perc_folha = (abs(vals['FOLHA']) / vals['RB'] * 100) if vals['RB'] > 0 else 0
+            if perc_folha > 12:
+                st.info(f"Indicador de Folha: {perc_folha:.1f}% do faturamento.")
+
+        with col_graf:
+            df_gastos = pd.DataFrame({
+                "Conta": ["Folha", "ADM", "Operação", "Quebra/Perdas"],
+                "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
+            }).sort_values(by="Valor", ascending=False)
+            
+            fig_ofensores = px.pie(df_gastos, values='Valor', names='Conta', 
+                                   title="Composição de Gastos Operacionais",
+                                   color_discrete_sequence=px.colors.sequential.RdBu)
+            st.plotly_chart(fig_ofensores, use_container_width=True)
+
+        # --- TABELA DE DADOS FINANCEIROS DETALHADA ---
+        st.markdown("---")
+        st.subheader("Tabela de Dados Financeiros Detalhada")
+        df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
+        st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
 
     except Exception as e:
         st.error(f"Erro no processamento do DRE: {e}")
