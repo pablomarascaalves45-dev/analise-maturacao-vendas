@@ -259,52 +259,65 @@ if arquivo_dre is not None:
                                    color_discrete_sequence=px.colors.sequential.RdBu)
             st.plotly_chart(fig_ofensores, use_container_width=True)
 
-        # --- TABELA DE DADOS FINANCEIROS DETALHADA ---
+        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM ESTILIZAÇÃO ---
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
         
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-        # Identificação dinâmica de colunas (AV-RI / AV-RL / REALIZADO)
+        # Identificação dinâmica de colunas
         colunas_avri = []
         colunas_realizado = []
         
         for col_idx in range(len(df_exibicao.columns)):
-            # Varre as 4 primeiras linhas para capturar o cabeçalho
             cabecalho_texto = df_exibicao.iloc[0:4, col_idx].astype(str).str.upper()
             if cabecalho_texto.str.contains("AV-RI").any() or cabecalho_texto.str.contains("AV-RL").any():
                 colunas_avri.append(df_exibicao.columns[col_idx])
             if cabecalho_texto.str.contains("REALIZADO").any():
                 colunas_realizado.append(df_exibicao.columns[col_idx])
 
-        # Funções de formatação específicas para evitar erros de string
+        # Formatadores
         def formatador_porcentagem(val):
             if val == "" or val == "-" or val == " ": return val
             try:
-                # Converte para número, multiplica por 100 e formata
                 num = float(str(val).replace(',', '.'))
                 return f"{num * 100:.2f}%".replace('.', ',')
-            except:
-                return val
+            except: return val
 
         def formatador_inteiro(val):
             if val == "" or val == "-" or val == " ": return val
             try:
                 num = float(str(val).replace(',', '.'))
                 return f"{int(round(num)):,}".replace(',', '.')
-            except:
-                return val
+            except: return val
 
-        # Definição das colunas de porcentagem (Coluna 2 fixo + colunas AV dinâmicas)
+        # Lógica de Destaque
+        contas_destaque = [
+            "Receita Bruta", "Deduções", "Receita Líquida", "CMV", 
+            "Perdas Vencidos Liquido", "Discrepância _ Estoque", 
+            "Margem de Contribuição", "Despesas Folha", "Despesas ADM", 
+            "Despesas Operação", "Resultado Operacional"
+        ]
+
+        def estilo_linhas_mestre(row):
+            texto_celula = str(row.iloc[1]).strip()
+            # Verifica se o nome da conta está presente na lista de destaque
+            if any(conta.lower() in texto_celula.lower() for conta in contas_destaque):
+                # Azul claro de fundo, negrito e uma borda inferior para o efeito de sombra
+                return ['background-color: #f0f7ff; font-weight: bold; border-bottom: 1.5px solid #d1dbe5;'] * len(row)
+            return [''] * len(row)
+
         col_pct_alvo = list(set([2] + colunas_avri))
         
-        # Exibição final com os formatadores corrigidos
-        st.dataframe(
-            df_exibicao.style.format(subset=col_pct_alvo, formatter=formatador_porcentagem)
-                             .format(subset=colunas_realizado, formatter=formatador_inteiro), 
-            use_container_width=True, 
-            hide_index=True
+        # Aplicação final do Style e Dataframe
+        df_estilizado = (
+            df_exibicao.style
+            .apply(estilo_linhas_mestre, axis=1)
+            .format(subset=col_pct_alvo, formatter=formatador_porcentagem)
+            .format(subset=colunas_realizado, formatter=formatador_inteiro)
         )
+
+        st.dataframe(df_estilizado, use_container_width=True, hide_index=True)
 
     except Exception as e:
         st.error(f"Erro no processamento do DRE: {e}")
