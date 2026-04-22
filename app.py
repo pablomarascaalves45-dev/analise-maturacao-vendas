@@ -212,14 +212,14 @@ if arquivo_dre is not None:
 
         vals = {k: pegar_v(k) for k in termos.keys()}
 
-        # BUSCA ADICIONAL PARA O CMV TOTAL
+        # BUSCA ADICIONAL PARA O CMV TOTAL (Para a nova métrica)
         match_cmv = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains("CMV", case=False, na=False)]
         cmv_total = 0.0
         if not match_cmv.empty:
             val_cmv = df_dre_raw.iloc[match_cmv.index[0], 3]
             cmv_total = pd.to_numeric(val_cmv, errors='coerce') if pd.notnull(val_cmv) else 0.0
 
-        # LAYOUT DE MÉTRICAS COM CMV TOTAL ADICIONADO
+        # MÉTRICAS COM CMV ADICIONADO
         c1, c2, c3, c4, c5 = st.columns(5) 
         c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
         c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
@@ -263,7 +263,7 @@ if arquivo_dre is not None:
         
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-        # Contagem de linhas inserida na coluna 0
+        # RECOLOCA A CONTAGEM DE LINHAS (Nº)
         contagem_linhas = range(1, len(df_exibicao) + 1)
         df_exibicao.insert(0, 'Nº', contagem_linhas)
 
@@ -291,17 +291,25 @@ if arquivo_dre is not None:
                 return f"{int(round(num)):,}".replace(',', '.')
             except: return val
 
-        # AJUSTE DE DESTAQUE: Agora focado nas linhas dos Meses (Linha 1 e 2)
-        def estilo_cabecalho_meses(row):
-            if row.iloc[0] in [1, 2]:
-                return ['background-color: #f0f7ff; font-weight: bold; border-bottom: 2px solid #d1dbe5;'] * len(row)
+        # LÓGICA DE DESTAQUE DAS LINHAS POR CONTA FINANCEIRA (Mantida conforme solicitado)
+        contas_destaque = [
+            "Receita Bruta", "Deduções", "Receita Líquida", "CMV", 
+            "Perdas Vencidos Liquido", "Discrepância _ Estoque", 
+            "Margem de Contribuição", "Despesas Folha", "Despesas ADM", 
+            "Despesas Operação", "Resultado Operacional"
+        ]
+
+        def estilo_linhas_mestre(row):
+            texto_celula = str(row.iloc[2]).strip() 
+            if any(conta.lower() in texto_celula.lower() for conta in contas_destaque):
+                return ['background-color: #f0f7ff; font-weight: bold; border-bottom: 1.5px solid #d1dbe5;'] * len(row)
             return [''] * len(row)
 
         col_pct_alvo = list(set([3] + colunas_avri))
         
         df_estilizado = (
             df_exibicao.style
-            .apply(estilo_cabecalho_meses, axis=1)
+            .apply(estilo_linhas_mestre, axis=1)
             .format(subset=col_pct_alvo, formatter=formatador_porcentagem)
             .format(subset=colunas_realizado, formatter=formatador_inteiro)
         )
