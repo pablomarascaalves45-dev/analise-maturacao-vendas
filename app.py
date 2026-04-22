@@ -259,31 +259,34 @@ if arquivo_dre is not None:
                                    color_discrete_sequence=px.colors.sequential.RdBu)
             st.plotly_chart(fig_ofensores, use_container_width=True)
 
-        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM VARREDURA NA LINHA 3 ---
+        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM FORMATAÇÃO CORRIGIDA ---
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
         
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-        # Identificação de colunas alvo por nome especificamente na LINHA 3 (índice 2)
+        # Identificação de colunas alvo por nome no cabeçalho
         colunas_avri = []
         colunas_realizado = []
         
-        if len(df_exibicao) >= 3:
-            for col_idx in range(len(df_exibicao.columns)):
-                # Pega o valor da linha 3 (índice 2) para esta coluna
-                valor_linha_3 = str(df_exibicao.iloc[2, col_idx]).upper().strip()
-                
-                if "AV-RI" in valor_linha_3:
-                    colunas_avri.append(df_exibicao.columns[col_idx])
-                if "REALIZADO" in valor_linha_3:
-                    colunas_realizado.append(df_exibicao.columns[col_idx])
+        for col_idx in range(len(df_exibicao.columns)):
+            # Varre as 3 primeiras linhas para identificar o título da coluna
+            cabecalho_texto = df_exibicao.iloc[0:3, col_idx].astype(str).str.upper()
+            if cabecalho_texto.str.contains("AV-RI").any():
+                colunas_avri.append(df_exibicao.columns[col_idx])
+            if cabecalho_texto.str.contains("REALIZADO").any():
+                colunas_realizado.append(df_exibicao.columns[col_idx])
 
-        # Funções de formatação (sem alteração na lógica de conversão)
+        # Funções de formatação melhoradas
         def formatador_porcentagem(val):
             try:
-                num = pd.to_numeric(val, errors='coerce')
-                if pd.notnull(num) and not isinstance(val, str):
+                if val == "" or val == "-" or isinstance(val, str): 
+                    # Tenta converter string para número se for possível
+                    num = pd.to_numeric(val, errors='coerce')
+                else:
+                    num = val
+                
+                if pd.notnull(num) and isinstance(num, (int, float)):
                     return f"{num * 100:.2f}%".replace('.', ',')
                 return val
             except: 
@@ -298,7 +301,7 @@ if arquivo_dre is not None:
             except: 
                 return val
 
-        # Aplicar estilos: Coluna 2 fixo (%Meta) + dinâmicas localizadas na linha 3
+        # Aplicar estilos: Coluna 2 fixo (%Meta) + dinâmicas AV-RI
         colunas_pct_final = list(set([2] + colunas_avri))
         
         st.dataframe(
