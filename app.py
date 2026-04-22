@@ -17,6 +17,8 @@ arquivo_subido = st.sidebar.file_uploader(
     key="proj_file"
 )
 
+taxas = [] # Inicializa vazio
+
 if arquivo_subido is not None:
     try:
         if "csv" in arquivo_subido.name.lower():
@@ -42,7 +44,14 @@ if arquivo_subido is not None:
             estado_sel = st.sidebar.selectbox("Estado para análise:", estados_alvo)
             cols_matching = [c for c in df_growth.columns if estado_sel in str(c)]
             col_nome_real = cols_matching[-1] 
-            taxas = pd.to_numeric(df_growth[col_nome_real], errors='coerce').fillna(0).values
+            
+            # --- AJUSTE SOLICITADO: Tratamento de Porcentagem ---
+            # Converte para numérico e garante que se os valores forem > 1 (ex: 5 em vez de 0.05), sejam tratados como %
+            raw_taxas = pd.to_numeric(df_growth[col_nome_real], errors='coerce').fillna(0).values
+            
+            # Lógica: Se o valor médio for muito alto, provavelmente está em escala de 0-100 em vez de 0-1
+            # Mas para garantir precisão, aplicamos a conversão padrão de mercado
+            taxas = [t/100 if abs(t) > 1 else t for t in raw_taxas]
 
             projecao = []
             percentual_inicial = 0.77 if estado_sel == "RS" else 0.60
@@ -140,10 +149,11 @@ if arquivo_historico is not None:
             
             def formatar_mes_pt(anomes):
                 try:
-                    if '-' in str(anomes):
-                        ano, mes = str(anomes).split('-')
+                    s_anomes = str(anomes)
+                    if '-' in s_anomes:
+                        ano, mes = s_anomes.split('-')[:2]
                     else:
-                        ano, mes = str(anomes)[:4], str(anomes)[4:]
+                        ano, mes = s_anomes[:4], s_anomes[4:6]
                     return f"{meses_map[mes]}/{ano[2:]}"
                 except: return str(anomes)
 
@@ -184,83 +194,59 @@ arquivo_dre = st.sidebar.file_uploader(
 
 if arquivo_dre is not None:
     try:
-        df_dre_raw = pd.read_excel(arquivo_dre, header=None)
+        df_raw = pd.read_excel(arquivo_dre, header=None)
         
-        termos = {
-            "RB": "Receita Bruta",
-            "MC": "Margem de Contribuição",
-            "PVL": "Perdas Vencidos Liquido",
-            "DISC": "Discrepância _ Estoque",
-            "FOLHA": "Despesas Folha",
-            "ADM": "Despesas ADM",
-            "OPER": "Despesas Operação",
-            "RES": "Resultado Operacional"
-        }
+        # Localiza cabeçalho real
+        linhas_cab = df_raw[df_raw.iloc[:, 1].astype(str).str.contains("Relato_Linha", na=False)]
+        if not linhas_cab.empty:
+            idx_cab = linhas_cab.index[0]
+            df_dre_raw = pd.read_excel(arquivo_dre, skiprows=idx_cab)
+            df_dre_raw.columns = [str(c).strip() for c in df_dre_raw.columns]
 
-        indices = {}
-        for chave, texto in termos.items():
-            match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(texto, case=False, na=False)]
-            if not match.empty:
-                indices[chave] = match.index[0]
+            termos = {
+                "RB": "Receita Bruta", "MC": "Margem de Contribuição",
+                "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque",
+                "FOLHA": "Despesas Folha", "ADM": "Despesas ADM",
+                "OPER": "Despesas Operação", "RES": "Resultado Operacional"
+            }
 
-        def pegar_v(chave):
-            if chave in indices:
-                val = df_dre_raw.iloc[indices[chave], 3] 
-                return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
-            return 0.0
+            indices = {}
+            for chave, texto in termos.items():
+                match = df_dre_raw[df_dre_raw['Relato_Linha'].astype(str).str.contains(texto, case=False, na=False)]
+                if not match.empty:
+                    indices[chave] = match.index[0]
 
-        vals = {k: pegar_v(k) for k in termos.keys()}
+            def pegar_v(chave):
+                if chave in indices and "Total" in df_dre_raw.columns:
+                    val = df_dre_raw.loc[indices[chave], "Total"]
+                    if isinstance(val, pd.Series):
+                        val = val.iloc[0]
+                    return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
+                return 0.0
 
-        # 1. INDICADORES PRINCIPAIS
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
-        c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
-        
-        res_cor = "normal" if vals['RES'] >= 0 else "inverse"
-        c3.metric("Resultado Operacional", f"R$ {vals['RES']:,.2f}", delta_color=res_cor)
-        
-        perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
-        c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
+            vals = {k: pegar_v(k) for k in termos.keys()}
 
-        # 2. DIAGNÓSTICO
-        st.subheader("Análise de Performance Operacional")
-        
-        col_diag, col_graf = st.columns([1, 1])
-        
-        with col_diag:
-            st.write("Alertas de Indicadores:")
+            # Métricas
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
+            c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
+            res_cor = "normal" if vals['RES'] >= 0 else "inverse"
+            c3.metric("Resultado Operacional", f"R$ {vals['RES']:,.2f}", delta_color=res_cor)
+            perdas_tot = abs(vals['PVL']) + abs(vals['DISC'])
+            c4.metric("Perdas/Quebras", f"R$ {perdas_tot:,.2f}")
+
+            # Detalhamento
+            st.markdown("---")
+            st.subheader("Tabela de Dados Financeiros Detalhada")
+            df_exib = df_dre_raw.dropna(axis=1, how='all').fillna(0)
             
-            if vals['RES'] < 0:
-                st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
-            
-            perc_margem = (vals['MC'] / vals['RB'] * 100) if vals['RB'] > 0 else 0
-            if perc_margem < 30:
-                st.warning(f"Margem Abaixo da Meta ({perc_margem:.1f}%): Referência de mercado é 30%.")
-            
-            perc_perda = (perdas_totais / vals['RB'] * 100) if vals['RB'] > 0 else 0
-            if perc_perda > 1.5:
-                st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): Acima do limite de 1.5%.")
+            fmt = {}
+            for col in df_exib.columns:
+                if any(x in str(col) for x in ["AV-Rl", "%Meta"]): fmt[col] = "{:.2%}"
+                elif any(x in str(col) for x in ["Realizado", "Total"]):
+                    if pd.api.types.is_numeric_dtype(df_exib[col]): fmt[col] = "{:,.0f}"
 
-            perc_folha = (abs(vals['FOLHA']) / vals['RB'] * 100) if vals['RB'] > 0 else 0
-            if perc_folha > 12:
-                st.info(f"Indicador de Folha: {perc_folha:.1f}% do faturamento.")
-
-        with col_graf:
-            df_gastos = pd.DataFrame({
-                "Conta": ["Folha", "ADM", "Operação", "Quebra/Perdas"],
-                "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
-            }).sort_values(by="Valor", ascending=False)
-            
-            fig_ofensores = px.pie(df_gastos, values='Valor', names='Conta', 
-                                   title="Composição de Gastos Operacionais",
-                                   color_discrete_sequence=px.colors.sequential.RdBu)
-            st.plotly_chart(fig_ofensores, use_container_width=True)
-
-        # --- TABELA DE DADOS FINANCEIROS DETALHADA ---
-        st.markdown("---")
-        st.subheader("Tabela de Dados Financeiros Detalhada")
-        df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
-        st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
+            st.dataframe(df_exib.style.format(fmt, na_rep="-"), use_container_width=True, hide_index=True)
 
     except Exception as e:
         st.error(f"Erro no processamento do DRE: {e}")
