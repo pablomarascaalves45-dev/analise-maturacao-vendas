@@ -212,14 +212,13 @@ if arquivo_dre is not None:
 
         vals = {k: pegar_v(k) for k in termos.keys()}
 
-        # BUSCA ADICIONAL PARA O CMV
         match_cmv = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains("CMV", case=False, na=False)]
         cmv_total = 0.0
         if not match_cmv.empty:
             val_cmv = df_dre_raw.iloc[match_cmv.index[0], 3]
             cmv_total = pd.to_numeric(val_cmv, errors='coerce') if pd.notnull(val_cmv) else 0.0
 
-        # --- EXIBIÇÃO DAS MÉTRICAS COM A REGRA DO CMV SOLICITADA ---
+        # --- MÉTRICAS ---
         c1, c2, c3, c4, c5 = st.columns(5) 
         c1.metric("Receita Bruta", f"R$ {vals['RB']:,.2f}")
         c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
@@ -230,9 +229,8 @@ if arquivo_dre is not None:
         perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
         c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
 
-        # Lógica CMV: Balão de % com cor dinâmica
+        # CMV com balão de porcentagem e cor dinâmica
         perc_cmv = (abs(cmv_total) / vals['RB'] * 100) if vals['RB'] > 0 else 0
-        # Se > 65% Vermelho (inverse), se <= 65% Verde (normal)
         cor_cmv = "inverse" if perc_cmv > 65 else "normal"
         c5.metric("CMV", f"R$ {cmv_total:,.2f}", delta=f"{perc_cmv:.2f}%", delta_color=cor_cmv)
 
@@ -244,9 +242,10 @@ if arquivo_dre is not None:
             if vals['RES'] < 0:
                 st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
             
+            # --- AJUSTE DA META DE MARGEM PARA 35% ---
             perc_margem = (vals['MC'] / vals['RB'] * 100) if vals['RB'] > 0 else 0
-            if perc_margem < 30:
-                st.warning(f"Margem Abaixo da Meta ({perc_margem:.1f}%): Referência de mercado é 30%.")
+            if perc_margem < 35:
+                st.warning(f"Margem Abaixo da Meta ({perc_margem:.1f}%): Referência de mercado é 35%.")
             
             perc_perda = (perdas_totais / vals['RB'] * 100) if vals['RB'] > 0 else 0
             if perc_perda > 1.5:
