@@ -212,7 +212,15 @@ if arquivo_dre is not None:
 
         vals = {k: pegar_v(k) for k in termos.keys()}
 
-        c1, c2, c3, c4 = st.columns(4)
+        # BUSCA ADICIONAL PARA O CMV TOTAL
+        match_cmv = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains("CMV", case=False, na=False)]
+        cmv_total = 0.0
+        if not match_cmv.empty:
+            val_cmv = df_dre_raw.iloc[match_cmv.index[0], 3]
+            cmv_total = pd.to_numeric(val_cmv, errors='coerce') if pd.notnull(val_cmv) else 0.0
+
+        # LAYOUT DE MÉTRICAS COM CMV TOTAL ADICIONADO
+        c1, c2, c3, c4, c5 = st.columns(5) 
         c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
         c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
         
@@ -221,6 +229,7 @@ if arquivo_dre is not None:
         
         perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
         c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
+        c5.metric("CMV Total", f"R$ {cmv_total:,.2f}")
 
         st.subheader("Análise de Performance Operacional")
         col_diag, col_graf = st.columns([1, 1])
@@ -254,11 +263,10 @@ if arquivo_dre is not None:
         
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-        # --- ADIÇÃO DA CONTAGEM DE LINHAS ---
+        # Contagem de linhas inserida na coluna 0
         contagem_linhas = range(1, len(df_exibicao) + 1)
         df_exibicao.insert(0, 'Nº', contagem_linhas)
 
-        # Identificação dinâmica de colunas (ajustado para ignorar a nova coluna 0)
         colunas_avri = []
         colunas_realizado = []
         
@@ -269,7 +277,6 @@ if arquivo_dre is not None:
             if cabecalho_texto.str.contains("REALIZADO").any():
                 colunas_realizado.append(df_exibicao.columns[col_idx])
 
-        # Formatadores
         def formatador_porcentagem(val):
             if val == "" or val == "-" or val == " ": return val
             try:
@@ -284,26 +291,17 @@ if arquivo_dre is not None:
                 return f"{int(round(num)):,}".replace(',', '.')
             except: return val
 
-        # Lógica de Destaque (Ajustada: Conta agora está no índice 2)
-        contas_destaque = [
-            "Receita Bruta", "Deduções", "Receita Líquida", "CMV", 
-            "Perdas Vencidos Liquido", "Discrepância _ Estoque", 
-            "Margem de Contribuição", "Despesas Folha", "Despesas ADM", 
-            "Despesas Operação", "Resultado Operacional"
-        ]
-
-        def estilo_linhas_mestre(row):
-            texto_celula = str(row.iloc[2]).strip() # Alterado de 1 para 2
-            if any(conta.lower() in texto_celula.lower() for conta in contas_destaque):
-                return ['background-color: #f0f7ff; font-weight: bold; border-bottom: 1.5px solid #d1dbe5;'] * len(row)
+        # AJUSTE DE DESTAQUE: Agora focado nas linhas dos Meses (Linha 1 e 2)
+        def estilo_cabecalho_meses(row):
+            if row.iloc[0] in [1, 2]:
+                return ['background-color: #f0f7ff; font-weight: bold; border-bottom: 2px solid #d1dbe5;'] * len(row)
             return [''] * len(row)
 
-        # Ajuste no índice fixo de Meta (era 2, agora é 3 devido ao Nº inserido)
         col_pct_alvo = list(set([3] + colunas_avri))
         
         df_estilizado = (
             df_exibicao.style
-            .apply(estilo_linhas_mestre, axis=1)
+            .apply(estilo_cabecalho_meses, axis=1)
             .format(subset=col_pct_alvo, formatter=formatador_porcentagem)
             .format(subset=colunas_realizado, formatter=formatador_inteiro)
         )
