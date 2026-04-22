@@ -266,33 +266,44 @@ if arquivo_dre is not None:
         # Limpeza inicial
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-        # Identificação dinâmica das colunas "AV-RI"
-        # Varre as 3 primeiras linhas de cada coluna procurando o termo
+        # Identificação dinâmica das colunas "AV-RI" e "Realizado"
         colunas_avri = []
+        colunas_realizado = []
+        
         for col_idx in range(len(df_exibicao.columns)):
+            # Procura AV-RI no cabeçalho (3 primeiras linhas)
             if df_exibicao.iloc[0:3, col_idx].astype(str).str.contains("AV-RI").any():
                 colunas_avri.append(df_exibicao.columns[col_idx])
+            # Procura Realizado no cabeçalho (3 primeiras linhas)
+            if df_exibicao.iloc[0:3, col_idx].astype(str).str.contains("Realizado").any():
+                colunas_realizado.append(df_exibicao.columns[col_idx])
 
-        # Função de formatação para Percentual (Ex: 1.0043 -> 100,43%)
+        # Funções de formatação
         def formatador_porcentagem(val):
             try:
-                if val == "" or val == "-":
-                    return val
-                
-                # Converte para número se possível
+                if val == "" or val == "-": return val
                 num = pd.to_numeric(val, errors='coerce')
                 if pd.notnull(num) and not isinstance(val, str):
-                    # Multiplica por 100 e troca ponto por vírgula
                     return f"{num * 100:.2f}%".replace('.', ',')
                 return val
-            except:
+            except: return val
+
+        def formatador_inteiro(val):
+            try:
+                if val == "" or val == "-": return val
+                num = pd.to_numeric(val, errors='coerce')
+                if pd.notnull(num) and not isinstance(val, str):
+                    # Formata como inteiro com separador de milhar (ponto)
+                    return f"{int(round(num)):,}".replace(',', '.')
                 return val
+            except: return val
 
-        # Combina a coluna fixa 2 (%Meta) com as colunas AV-RI encontradas
-        colunas_alvo = list(set([2] + colunas_avri))
-
+        # Aplicação dos estilos
+        colunas_pct = list(set([2] + colunas_avri)) # Coluna 2 (%Meta) + colunas AV-RI
+        
         st.dataframe(
-            df_exibicao.style.format(subset=colunas_alvo, formatter=formatador_porcentagem), 
+            df_exibicao.style.format(subset=colunas_pct, formatter=formatador_porcentagem)
+                             .format(subset=colunas_realizado, formatter=formatador_inteiro), 
             use_container_width=True, 
             hide_index=True
         )
