@@ -6,36 +6,6 @@ import io
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="Curva de Maturação", layout="wide")
 
-# CSS CUSTOMIZADO PARA FIXAR COLUNAS E LINHAS (FREEZE PANES)
-# Este bloco fixa as primeiras colunas e o cabeçalho no componente st.dataframe
-st.markdown("""
-    <style>
-    /* Fixar Cabeçalho (Linhas de topo) */
-    thead tr th {
-        position: sticky !important;
-        top: 0;
-        z-index: 10;
-        background-color: white !important;
-    }
-
-    /* Fixar Colunas 0 a 4 (índices e nomes de conta) */
-    /* Nota: No Streamlit, as células são <td>. Aplicamos o sticky nelas. */
-    div[data-testid="stTable"] td:nth-child(-n+5), 
-    div[data-testid="stTable"] th:nth-child(-n+5) {
-        position: sticky !important;
-        left: 0;
-        z-index: 5;
-        background-color: white !important;
-        border-right: 1px solid #ddd !important;
-    }
-    
-    /* Garantir que o cabeçalho das colunas fixas fique acima de tudo */
-    div[data-testid="stTable"] th:nth-child(-n+5) {
-        z-index: 15;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 st.title("Projeção de Maturação: Analisador de Dados")
 st.markdown("---")
 
@@ -47,6 +17,7 @@ arquivo_subido = st.sidebar.file_uploader(
     key="proj_file"
 )
 
+# Inicializa variável de taxas para evitar erro de escopo
 taxas = []
 
 if arquivo_subido is not None:
@@ -58,6 +29,7 @@ if arquivo_subido is not None:
 
         df_growth = df_growth.dropna(axis=1, how='all')
 
+        # --- PARÂMETROS ---
         st.sidebar.header("Configurações da Projeção")
         valor_estudo = st.sidebar.number_input(
             "Venda Alvo (Estudo 100%):", 
@@ -66,6 +38,7 @@ if arquivo_subido is not None:
             step=10000.0
         )
         
+        # Filtragem por estado
         estados_alvo = ["RS", "SC", "PR"]
         colunas_disponiveis = [c for c in df_growth.columns if any(est in str(c) for est in estados_alvo)]
         
@@ -93,6 +66,7 @@ if arquivo_subido is not None:
             df_res["% Maturação"] = (df_res["Faturamento"] / valor_estudo) * 100
             meses_grafico = [1, 3, 6, 9, 12, 18, 24, 30, 36]
 
+            # --- DASHBOARD DE PROJEÇÃO ---
             c1, c2 = st.columns([2, 1])
             with c1:
                 fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
@@ -162,21 +136,40 @@ if arquivo_historico is not None:
             
             df_loja['Crescimento_Esperado'] = esperado
 
-            meses_map = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'}
+            meses_map = {
+                '01': 'Jan', '02': 'Fev', '03': 'Mar', '04': 'Abr',
+                '05': 'Mai', '06': 'Jun', '07': 'Jul', '08': 'Ago',
+                '09': 'Set', '10': 'Out', '11': 'Nov', '12': 'Dez'
+            }
             
             def formatar_mes_pt(anomes):
                 try:
                     s_anomes = str(anomes)
-                    ano, mes = (s_anomes.split('-') if '-' in s_anomes else (s_anomes[:4], s_anomes[4:]))
+                    if '-' in s_anomes:
+                        ano, mes = s_anomes.split('-')
+                    else:
+                        ano, mes = s_anomes[:4], s_anomes[4:]
                     return f"{meses_map[mes]}/{ano[2:]}"
                 except: return str(anomes)
 
             df_loja['Mes_PT'] = df_loja['AnoMes'].apply(formatar_mes_pt)
-            df_loja['Valor_Texto'] = df_loja['Mercadoria'].apply(lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
+            df_loja['Valor_Texto'] = df_loja['Mercadoria'].apply(
+                lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+            )
 
-            fig_hist = px.bar(df_loja, x='Mes_PT', y='Mercadoria', title=f"Histórico Real vs Projeção ({filial_sel})", template="plotly_white", text='Valor_Texto') 
-            fig_hist.add_scatter(x=df_loja['Mes_PT'], y=df_loja['Crescimento_Esperado'], mode='lines+markers', name='Projeção Base Estado', line=dict(color='orange', width=3))
-            fig_hist.update_layout(yaxis_tickformat="R$,.2f", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            fig_hist = px.bar(df_loja, x='Mes_PT', y='Mercadoria', 
+                             title=f"Histórico Real vs Projeção ({filial_sel})",
+                             labels={'Mercadoria': 'Faturamento Real', 'Mes_PT': 'Período'},
+                             template="plotly_white",
+                             text='Valor_Texto') 
+
+            fig_hist.add_scatter(x=df_loja['Mes_PT'], y=df_loja['Crescimento_Esperado'], 
+                                 mode='lines+markers', 
+                                 name='Projeção Base Estado',
+                                 line=dict(color='orange', width=3))
+            
+            fig_hist.update_traces(marker_color='#3366CC', textposition='outside', selector=dict(type='bar'))
+            fig_hist.update_layout(yaxis_tickformat="R$,.2f", xaxis_title=None, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
             st.plotly_chart(fig_hist, use_container_width=True)
             
     except Exception as e:
@@ -188,17 +181,32 @@ st.header("Análise de DRE e Rentabilidade")
 
 st.sidebar.markdown("---")
 st.sidebar.header("Dados Financeiros (DRE)")
-arquivo_dre = st.sidebar.file_uploader("Upload da planilha de DRE:", type=["xlsx", "xls", "csv"], key="dre_file")
+arquivo_dre = st.sidebar.file_uploader(
+    "Upload da planilha de DRE:", 
+    type=["xlsx", "xls", "csv"],
+    key="dre_file"
+)
 
 if arquivo_dre is not None:
     try:
         df_dre_raw = pd.read_excel(arquivo_dre, header=None)
         
-        termos = {"RB": "Receita Bruta", "MC": "Margem de Contribuição", "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque", "FOLHA": "Despesas Folha", "ADM": "Despesas ADM", "OPER": "Despesas Operação", "RES": "Resultado Operacional"}
+        termos = {
+            "RB": "Receita Bruta",
+            "MC": "Margem de Contribuição",
+            "PVL": "Perdas Vencidos Liquido",
+            "DISC": "Discrepância _ Estoque",
+            "FOLHA": "Despesas Folha",
+            "ADM": "Despesas ADM",
+            "OPER": "Despesas Operação",
+            "RES": "Resultado Operacional"
+        }
+
         indices = {}
         for chave, texto in termos.items():
             match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(texto, case=False, na=False)]
-            if not match.empty: indices[chave] = match.index[0]
+            if not match.empty:
+                indices[chave] = match.index[0]
 
         def pegar_v(chave):
             if chave in indices:
@@ -208,18 +216,59 @@ if arquivo_dre is not None:
 
         vals = {k: pegar_v(k) for k in termos.keys()}
 
+        # 1. INDICADORES PRINCIPAIS
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
         c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
-        c3.metric("Resultado Operacional", f"R$ {vals['RES']:,.2f}", delta_color="normal" if vals['RES'] >= 0 else "inverse")
+        
+        res_cor = "normal" if vals['RES'] >= 0 else "inverse"
+        c3.metric("Resultado Operacional", f"R$ {vals['RES']:,.2f}", delta_color=res_cor)
+        
         perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
         c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
 
+        # 2. DIAGNÓSTICO
+        st.subheader("Análise de Performance Operacional")
+        col_diag, col_graf = st.columns([1, 1])
+        
+        with col_diag:
+            st.write("Alertas de Indicadores:")
+            if vals['RES'] < 0:
+                st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
+            
+            perc_margem = (vals['MC'] / vals['RB'] * 100) if vals['RB'] > 0 else 0
+            if perc_margem < 30:
+                st.warning(f"Margem Abaixo da Meta ({perc_margem:.1f}%): Referência de mercado é 30%.")
+            
+            perc_perda = (perdas_totais / vals['RB'] * 100) if vals['RB'] > 0 else 0
+            if perc_perda > 1.5:
+                st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): Acima do limite de 1.5%.")
+
+            perc_folha = (abs(vals['FOLHA']) / vals['RB'] * 100) if vals['RB'] > 0 else 0
+            if perc_folha > 12:
+                st.info(f"Indicador de Folha: {perc_folha:.1f}% do faturamento.")
+
+        with col_graf:
+            df_gastos = pd.DataFrame({
+                "Conta": ["Folha", "ADM", "Operação", "Quebra/Perdas"],
+                "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
+            }).sort_values(by="Valor", ascending=False)
+            
+            fig_ofensores = px.pie(df_gastos, values='Valor', names='Conta', 
+                                   title="Composição de Gastos Operacionais",
+                                   color_discrete_sequence=px.colors.sequential.RdBu)
+            st.plotly_chart(fig_ofensores, use_container_width=True)
+
+        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM ESTILIZAÇÃO ---
+        st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
+        
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
+        # Identificação dinâmica de colunas
         colunas_avri = []
         colunas_realizado = []
+        
         for col_idx in range(len(df_exibicao.columns)):
             cabecalho_texto = df_exibicao.iloc[0:4, col_idx].astype(str).str.upper()
             if cabecalho_texto.str.contains("AV-RI").any() or cabecalho_texto.str.contains("AV-RL").any():
@@ -227,24 +276,40 @@ if arquivo_dre is not None:
             if cabecalho_texto.str.contains("REALIZADO").any():
                 colunas_realizado.append(df_exibicao.columns[col_idx])
 
+        # Formatadores
         def formatador_porcentagem(val):
-            try: return f"{float(str(val).replace(',', '.')) * 100:.2f}%".replace('.', ',')
+            if val == "" or val == "-" or val == " ": return val
+            try:
+                num = float(str(val).replace(',', '.'))
+                return f"{num * 100:.2f}%".replace('.', ',')
             except: return val
 
         def formatador_inteiro(val):
-            try: return f"{int(round(float(str(val).replace(',', '.')))):,}".replace(',', '.')
+            if val == "" or val == "-" or val == " ": return val
+            try:
+                num = float(str(val).replace(',', '.'))
+                return f"{int(round(num)):,}".replace(',', '.')
             except: return val
 
-        contas_destaque = ["Receita Bruta", "Deduções", "Receita Líquida", "CMV", "Perdas Vencidos Liquido", "Discrepância _ Estoque", "Margem de Contribuição", "Despesas Folha", "Despesas ADM", "Despesas Operação", "Resultado Operacional"]
+        # Lógica de Destaque
+        contas_destaque = [
+            "Receita Bruta", "Deduções", "Receita Líquida", "CMV", 
+            "Perdas Vencidos Liquido", "Discrepância _ Estoque", 
+            "Margem de Contribuição", "Despesas Folha", "Despesas ADM", 
+            "Despesas Operação", "Resultado Operacional"
+        ]
 
         def estilo_linhas_mestre(row):
             texto_celula = str(row.iloc[1]).strip()
+            # Verifica se o nome da conta está presente na lista de destaque
             if any(conta.lower() in texto_celula.lower() for conta in contas_destaque):
+                # Azul claro de fundo, negrito e uma borda inferior para o efeito de sombra
                 return ['background-color: #f0f7ff; font-weight: bold; border-bottom: 1.5px solid #d1dbe5;'] * len(row)
             return [''] * len(row)
 
         col_pct_alvo = list(set([2] + colunas_avri))
         
+        # Aplicação final do Style e Dataframe
         df_estilizado = (
             df_exibicao.style
             .apply(estilo_linhas_mestre, axis=1)
@@ -252,8 +317,7 @@ if arquivo_dre is not None:
             .format(subset=colunas_realizado, formatter=formatador_inteiro)
         )
 
-        # Exibição da tabela final
         st.dataframe(df_estilizado, use_container_width=True, hide_index=True)
 
     except Exception as e:
-        st.error(f"Erro no DRE: {e}")
+        st.error(f"Erro no processamento do DRE: {e}")
