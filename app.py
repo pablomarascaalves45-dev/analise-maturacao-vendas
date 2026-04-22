@@ -17,6 +17,9 @@ arquivo_subido = st.sidebar.file_uploader(
     key="proj_file"
 )
 
+# Inicializa variável de taxas para evitar erro de escopo
+taxas = []
+
 if arquivo_subido is not None:
     try:
         if "csv" in arquivo_subido.name.lower():
@@ -35,6 +38,7 @@ if arquivo_subido is not None:
             step=10000.0
         )
         
+        # Filtragem por estado
         estados_alvo = ["RS", "SC", "PR"]
         colunas_disponiveis = [c for c in df_growth.columns if any(est in str(c) for est in estados_alvo)]
         
@@ -62,7 +66,7 @@ if arquivo_subido is not None:
             df_res["% Maturação"] = (df_res["Faturamento"] / valor_estudo) * 100
             meses_grafico = [1, 3, 6, 9, 12, 18, 24, 30, 36]
 
-            # --- DASHBOARD ---
+            # --- DASHBOARD DE PROJEÇÃO ---
             c1, c2 = st.columns([2, 1])
             with c1:
                 fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
@@ -124,7 +128,7 @@ if arquivo_historico is not None:
             esperado = [venda_inicial_real]
             
             for i in range(1, len(df_loja)):
-                if i < len(taxas):
+                if len(taxas) > i:
                     proximo_valor = esperado[-1] * (1 + taxas[i])
                     esperado.append(proximo_valor)
                 else:
@@ -140,10 +144,11 @@ if arquivo_historico is not None:
             
             def formatar_mes_pt(anomes):
                 try:
-                    if '-' in str(anomes):
-                        ano, mes = str(anomes).split('-')
+                    s_anomes = str(anomes)
+                    if '-' in s_anomes:
+                        ano, mes = s_anomes.split('-')
                     else:
-                        ano, mes = str(anomes)[:4], str(anomes)[4:]
+                        ano, mes = s_anomes[:4], s_anomes[4:]
                     return f"{meses_map[mes]}/{ano[2:]}"
                 except: return str(anomes)
 
@@ -153,7 +158,7 @@ if arquivo_historico is not None:
             )
 
             fig_hist = px.bar(df_loja, x='Mes_PT', y='Mercadoria', 
-                             title=f"Histórico Real vs Projeção de Crescimento ({estado_sel}) - {filial_sel}",
+                             title=f"Histórico Real vs Projeção ({filial_sel})",
                              labels={'Mercadoria': 'Faturamento Real', 'Mes_PT': 'Período'},
                              template="plotly_white",
                              text='Valor_Texto') 
@@ -224,12 +229,10 @@ if arquivo_dre is not None:
 
         # 2. DIAGNÓSTICO
         st.subheader("Análise de Performance Operacional")
-        
         col_diag, col_graf = st.columns([1, 1])
         
         with col_diag:
             st.write("Alertas de Indicadores:")
-            
             if vals['RES'] < 0:
                 st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
             
@@ -256,28 +259,40 @@ if arquivo_dre is not None:
                                    color_discrete_sequence=px.colors.sequential.RdBu)
             st.plotly_chart(fig_ofensores, use_container_width=True)
 
-        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM AJUSTE DE % ---
+        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM FORMATAÇÃO DINÂMICA ---
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
         
-        # 1. Prepara os dados (remove colunas vazias e preenche Nulos)
+        # Limpeza inicial
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-        # 2. Função para formatar com segurança a coluna %Meta (Índice 2)
+        # Identificação dinâmica das colunas "AV-RI"
+        # Varre as 3 primeiras linhas de cada coluna procurando o termo
+        colunas_avri = []
+        for col_idx in range(len(df_exibicao.columns)):
+            if df_exibicao.iloc[0:3, col_idx].astype(str).str.contains("AV-RI").any():
+                colunas_avri.append(df_exibicao.columns[col_idx])
+
+        # Função de formatação para Percentual (Ex: 1.0043 -> 100,43%)
         def formatador_porcentagem(val):
             try:
-                # Tenta converter o valor para número
-                num = pd.to_numeric(val)
-                # Se for número (e não for zero ou vazio em formato string)
+                if val == "" or val == "-":
+                    return val
+                
+                # Converte para número se possível
+                num = pd.to_numeric(val, errors='coerce')
                 if pd.notnull(num) and not isinstance(val, str):
-                    return f"{num * 100:.2f}%"
-                return val # Retorna o hifen ou texto original
+                    # Multiplica por 100 e troca ponto por vírgula
+                    return f"{num * 100:.2f}%".replace('.', ',')
+                return val
             except:
                 return val
 
-        # 3. Exibe a tabela aplicando o estilo apenas na coluna 2 (terceira coluna)
+        # Combina a coluna fixa 2 (%Meta) com as colunas AV-RI encontradas
+        colunas_alvo = list(set([2] + colunas_avri))
+
         st.dataframe(
-            df_exibicao.style.format(subset=[2], formatter=formatador_porcentagem), 
+            df_exibicao.style.format(subset=colunas_alvo, formatter=formatador_porcentagem), 
             use_container_width=True, 
             hide_index=True
         )
