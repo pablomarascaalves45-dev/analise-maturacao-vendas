@@ -229,7 +229,6 @@ if arquivo_dre is not None:
         perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
         c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
 
-        # CMV com balão de porcentagem e cor dinâmica
         perc_cmv = (abs(cmv_total) / vals['RB'] * 100) if vals['RB'] > 0 else 0
         cor_cmv = "inverse" if perc_cmv > 65 else "normal"
         c5.metric("CMV", f"R$ {cmv_total:,.2f}", delta=f"{perc_cmv:.2f}%", delta_color=cor_cmv)
@@ -242,10 +241,10 @@ if arquivo_dre is not None:
             if vals['RES'] < 0:
                 st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
             
-            # --- AJUSTE DA META DE MARGEM PARA 35% ---
             perc_margem = (vals['MC'] / vals['RB'] * 100) if vals['RB'] > 0 else 0
             if perc_margem < 35:
-                st.warning(f"Margem Abaixo da Meta ({perc_margem:.1f}%): Referência de mercado é 35%.")
+                # Texto atualizado para "A meta é 35%"
+                st.warning(f"Margem Abaixo da Meta ({perc_margem:.1f}%): A meta é 35%.")
             
             perc_perda = (perdas_totais / vals['RB'] * 100) if vals['RB'] > 0 else 0
             if perc_perda > 1.5:
