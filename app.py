@@ -17,6 +17,7 @@ arquivo_subido = st.sidebar.file_uploader(
     key="proj_file"
 )
 
+# Inicializa variável de taxas para evitar erro de escopo
 taxas = []
 
 if arquivo_subido is not None:
@@ -28,6 +29,7 @@ if arquivo_subido is not None:
 
         df_growth = df_growth.dropna(axis=1, how='all')
 
+        # --- PARÂMETROS ---
         st.sidebar.header("Configurações da Projeção")
         valor_estudo = st.sidebar.number_input(
             "Venda Alvo (Estudo 100%):", 
@@ -36,6 +38,7 @@ if arquivo_subido is not None:
             step=10000.0
         )
         
+        # Filtragem por estado
         estados_alvo = ["RS", "SC", "PR"]
         colunas_disponiveis = [c for c in df_growth.columns if any(est in str(c) for est in estados_alvo)]
         
@@ -63,6 +66,7 @@ if arquivo_subido is not None:
             df_res["% Maturação"] = (df_res["Faturamento"] / valor_estudo) * 100
             meses_grafico = [1, 3, 6, 9, 12, 18, 24, 30, 36]
 
+            # --- DASHBOARD DE PROJEÇÃO ---
             c1, c2 = st.columns([2, 1])
             with c1:
                 fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
@@ -160,9 +164,9 @@ if arquivo_historico is not None:
                              text='Valor_Texto') 
 
             fig_hist.add_scatter(x=df_loja['Mes_PT'], y=df_loja['Crescimento_Esperado'], 
-                                 mode='lines+markers', 
-                                 name='Projeção Base Estado',
-                                 line=dict(color='orange', width=3))
+                                mode='lines+markers', 
+                                name='Projeção Base Estado',
+                                line=dict(color='orange', width=3))
             
             fig_hist.update_traces(marker_color='#3366CC', textposition='outside', selector=dict(type='bar'))
             fig_hist.update_layout(yaxis_tickformat="R$,.2f", xaxis_title=None, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
@@ -212,14 +216,18 @@ if arquivo_dre is not None:
 
         vals = {k: pegar_v(k) for k in termos.keys()}
 
+        # 1. INDICADORES PRINCIPAIS
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
         c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
+        
         res_cor = "normal" if vals['RES'] >= 0 else "inverse"
         c3.metric("Resultado Operacional", f"R$ {vals['RES']:,.2f}", delta_color=res_cor)
+        
         perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
         c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
 
+        # 2. DIAGNÓSTICO
         st.subheader("Análise de Performance Operacional")
         col_diag, col_graf = st.columns([1, 1])
         
@@ -227,12 +235,15 @@ if arquivo_dre is not None:
             st.write("Alertas de Indicadores:")
             if vals['RES'] < 0:
                 st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
+            
             perc_margem = (vals['MC'] / vals['RB'] * 100) if vals['RB'] > 0 else 0
             if perc_margem < 30:
                 st.warning(f"Margem Abaixo da Meta ({perc_margem:.1f}%): Referência de mercado é 30%.")
+            
             perc_perda = (perdas_totais / vals['RB'] * 100) if vals['RB'] > 0 else 0
             if perc_perda > 1.5:
                 st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): Acima do limite de 1.5%.")
+
             perc_folha = (abs(vals['FOLHA']) / vals['RB'] * 100) if vals['RB'] > 0 else 0
             if perc_folha > 12:
                 st.info(f"Indicador de Folha: {perc_folha:.1f}% do faturamento.")
@@ -242,57 +253,59 @@ if arquivo_dre is not None:
                 "Conta": ["Folha", "ADM", "Operação", "Quebra/Perdas"],
                 "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
             }).sort_values(by="Valor", ascending=False)
+            
             fig_ofensores = px.pie(df_gastos, values='Valor', names='Conta', 
                                    title="Composição de Gastos Operacionais",
                                    color_discrete_sequence=px.colors.sequential.RdBu)
             st.plotly_chart(fig_ofensores, use_container_width=True)
 
+        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM FORMATAÇÃO CORRIGIDA ---
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
         
-        df_exibicao = df_dre_raw.copy()
-        df_exibicao = df_exibicao.fillna("")
+        df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-        # 1. IDENTIFICAÇÃO DAS COLUNAS (Varrendo a linha 3 - índice 2)
+        # Identificação de colunas alvo por nome no cabeçalho
         colunas_avri = []
         colunas_realizado = []
         
-        if len(df_exibicao) > 2:
-            linha_titulos = df_exibicao.iloc[2].astype(str).str.upper().str.strip()
-            for i, texto in enumerate(linha_titulos):
-                if "AV-RI" in texto or "AV-RL" in texto:
-                    colunas_avri.append(df_exibicao.columns[i])
-                elif "REALIZADO" in texto:
-                    colunas_realizado.append(df_exibicao.columns[i])
+        for col_idx in range(len(df_exibicao.columns)):
+            # Varre as 3 primeiras linhas para identificar o título da coluna
+            cabecalho_texto = df_exibicao.iloc[0:3, col_idx].astype(str).str.upper()
+            if cabecalho_texto.str.contains("AV-RI").any():
+                colunas_avri.append(df_exibicao.columns[col_idx])
+            if cabecalho_texto.str.contains("REALIZADO").any():
+                colunas_realizado.append(df_exibicao.columns[col_idx])
 
-        # 2. FORMATADORES MELHORADOS
+        # Funções de formatação melhoradas
         def formatador_porcentagem(val):
             try:
-                # Verifica se é número ou string numérica antes de formatar
-                num = pd.to_numeric(val, errors='coerce')
-                # Só formata se for número E se não for a linha de título (string original)
-                if pd.notnull(num) and not isinstance(val, str):
+                if val == "" or val == "-" or isinstance(val, str): 
+                    # Tenta converter string para número se for possível
+                    num = pd.to_numeric(val, errors='coerce')
+                else:
+                    num = val
+                
+                if pd.notnull(num) and isinstance(num, (int, float)):
                     return f"{num * 100:.2f}%".replace('.', ',')
-                return str(val) # Retorna o título original ou vazio
+                return val
             except: 
-                return str(val)
+                return val
 
         def formatador_inteiro(val):
             try:
                 num = pd.to_numeric(val, errors='coerce')
-                # Só formata se for número E se não for a linha de título
                 if pd.notnull(num) and not isinstance(val, str):
                     return f"{int(round(num)):,}".replace(',', '.')
-                return str(val)
+                return val
             except: 
-                return str(val)
+                return val
 
-        # 3. APLICAÇÃO DOS ESTILOS
-        # Coluna 2 (fixa) + Colunas dinâmicas encontradas
-        colunas_pct_total = list(set([2] + colunas_avri))
+        # Aplicar estilos: Coluna 2 fixo (%Meta) + dinâmicas AV-RI
+        colunas_pct_final = list(set([2] + colunas_avri))
         
         st.dataframe(
-            df_exibicao.style.format(subset=colunas_pct_total, formatter=formatador_porcentagem)
+            df_exibicao.style.format(subset=colunas_pct_final, formatter=formatador_porcentagem)
                              .format(subset=colunas_realizado, formatter=formatador_inteiro), 
             use_container_width=True, 
             hide_index=True
