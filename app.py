@@ -17,7 +17,7 @@ arquivo_subido = st.sidebar.file_uploader(
     key="proj_file"
 )
 
-taxas = [] # Inicializa vazio
+taxas = [] 
 
 if arquivo_subido is not None:
     try:
@@ -45,12 +45,13 @@ if arquivo_subido is not None:
             cols_matching = [c for c in df_growth.columns if estado_sel in str(c)]
             col_nome_real = cols_matching[-1] 
             
-            # --- AJUSTE SOLICITADO: Tratamento de Porcentagem ---
-            # Converte para numérico e garante que se os valores forem > 1 (ex: 5 em vez de 0.05), sejam tratados como %
-            raw_taxas = pd.to_numeric(df_growth[col_nome_real], errors='coerce').fillna(0).values
-            
-            # Lógica: Se o valor médio for muito alto, provavelmente está em escala de 0-100 em vez de 0-1
-            # Mas para garantir precisão, aplicamos a conversão padrão de mercado
+            # Tratamento de Porcentagem robusto
+            def limpar_porcentagem(val):
+                if isinstance(val, str):
+                    val = val.replace('%', '').replace(',', '.')
+                return pd.to_numeric(val, errors='coerce')
+
+            raw_taxas = df_growth[col_nome_real].apply(limpar_porcentagem).fillna(0).values
             taxas = [t/100 if abs(t) > 1 else t for t in raw_taxas]
 
             projecao = []
@@ -86,106 +87,13 @@ if arquivo_subido is not None:
                 st.dataframe(df_res.style.format({"Faturamento": "R$ {:,.2f}", "% Maturação": "{:.2f}%"}),
                             height=450, use_container_width=True, hide_index=True)
 
-            st.markdown("---")
-            m1, m12, m2, m3 = st.columns(4)
-            m1.metric("Venda Inicial (Mês 1)", f"R$ {projecao[0]:,.2f}", delta=f"{int(percentual_inicial*100)}% do Alvo")
-            
-            v_12 = projecao[11] if len(projecao) >= 12 else 0
-            perc_12 = (v_12 / valor_estudo) * 100 if valor_estudo > 0 else 0
-            m12.metric("Venda 12 Meses", f"R$ {v_12:,.2f}", delta=f"{perc_12:.1f}% do Alvo")
-            
-            v_final = projecao[-1]
-            perc_final = (v_final / valor_estudo) * 100 if valor_estudo > 0 else 0
-            m2.metric("Venda Final (Mês 36)", f"R$ {v_final:,.2f}", delta=f"{perc_final:.1f}% do Alvo")
-            
-            atingiu = df_res[df_res["% Maturação"] >= 100]
-            mes_mat = atingiu["Mês"].iloc[0] if not atingiu.empty else "Acima de 36m"
-            m3.metric("Maturação (100%)", f"Mês {mes_mat}")
-
     except Exception as e:
         st.error(f"Erro na Projeção: {e}")
 
-# --- SEÇÃO: HISTÓRICO REAL ---
-st.markdown("### Histórico Real vs Crescimento Projetado")
-st.sidebar.markdown("---")
-st.sidebar.header("Dados Históricos")
-arquivo_historico = st.sidebar.file_uploader(
-    "Upload da planilha de Vendas Realizadas (12 Meses):", 
-    type=["xlsx", "xls", "csv"],
-    key="hist_file"
-)
-
-if arquivo_historico is not None:
-    try:
-        if "csv" in arquivo_historico.name.lower():
-            df_hist = pd.read_csv(arquivo_historico, decimal='.', engine='python')
-        else:
-            df_hist = pd.read_excel(arquivo_historico)
-
-        if 'Desc_Filial' in df_hist.columns:
-            filiais = sorted(df_hist['Desc_Filial'].unique())
-            filial_sel = st.selectbox("Unidade para análise de histórico:", filiais)
-            
-            df_loja = df_hist[df_hist['Desc_Filial'] == filial_sel].copy()
-            df_loja = df_loja.sort_values(by='AnoMes')
-
-            venda_inicial_real = df_loja['Mercadoria'].iloc[0]
-            esperado = [venda_inicial_real]
-            
-            for i in range(1, len(df_loja)):
-                if i < len(taxas):
-                    proximo_valor = esperado[-1] * (1 + taxas[i])
-                    esperado.append(proximo_valor)
-                else:
-                    esperado.append(esperado[-1])
-            
-            df_loja['Crescimento_Esperado'] = esperado
-
-            meses_map = {
-                '01': 'Jan', '02': 'Fev', '03': 'Mar', '04': 'Abr',
-                '05': 'Mai', '06': 'Jun', '07': 'Jul', '08': 'Ago',
-                '09': 'Set', '10': 'Out', '11': 'Nov', '12': 'Dez'
-            }
-            
-            def formatar_mes_pt(anomes):
-                try:
-                    s_anomes = str(anomes)
-                    if '-' in s_anomes:
-                        ano, mes = s_anomes.split('-')[:2]
-                    else:
-                        ano, mes = s_anomes[:4], s_anomes[4:6]
-                    return f"{meses_map[mes]}/{ano[2:]}"
-                except: return str(anomes)
-
-            df_loja['Mes_PT'] = df_loja['AnoMes'].apply(formatar_mes_pt)
-            df_loja['Valor_Texto'] = df_loja['Mercadoria'].apply(
-                lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-            )
-
-            fig_hist = px.bar(df_loja, x='Mes_PT', y='Mercadoria', 
-                             title=f"Histórico Real vs Projeção de Crescimento ({estado_sel}) - {filial_sel}",
-                             labels={'Mercadoria': 'Faturamento Real', 'Mes_PT': 'Período'},
-                             template="plotly_white",
-                             text='Valor_Texto') 
-
-            fig_hist.add_scatter(x=df_loja['Mes_PT'], y=df_loja['Crescimento_Esperado'], 
-                                mode='lines+markers', 
-                                name='Projeção Base Estado',
-                                line=dict(color='orange', width=3))
-            
-            fig_hist.update_traces(marker_color='#3366CC', textposition='outside', selector=dict(type='bar'))
-            fig_hist.update_layout(yaxis_tickformat="R$,.2f", xaxis_title=None, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-            st.plotly_chart(fig_hist, use_container_width=True)
-            
-    except Exception as e:
-        st.error(f"Erro no processamento do histórico: {e}")
-
-# --- SEÇÃO DRE ---
+# --- SEÇÃO DRE CORRIGIDA ---
 st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 
-st.sidebar.markdown("---")
-st.sidebar.header("Dados Financeiros (DRE)")
 arquivo_dre = st.sidebar.file_uploader(
     "Upload da planilha de DRE:", 
     type=["xlsx", "xls", "csv"],
@@ -217,11 +125,13 @@ if arquivo_dre is not None:
                     indices[chave] = match.index[0]
 
             def pegar_v(chave):
-                if chave in indices and "Total" in df_dre_raw.columns:
-                    val = df_dre_raw.loc[indices[chave], "Total"]
-                    if isinstance(val, pd.Series):
-                        val = val.iloc[0]
-                    return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
+                if chave in indices:
+                    # Tenta pegar a coluna 'Total' ou 'Realizado'
+                    col_valor = "Total" if "Total" in df_dre_raw.columns else "Realizado"
+                    if col_valor in df_dre_raw.columns:
+                        val = df_dre_raw.loc[indices[chave], col_valor]
+                        if isinstance(val, pd.Series): val = val.iloc[0]
+                        return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
                 return 0.0
 
             vals = {k: pegar_v(k) for k in termos.keys()}
@@ -235,16 +145,22 @@ if arquivo_dre is not None:
             perdas_tot = abs(vals['PVL']) + abs(vals['DISC'])
             c4.metric("Perdas/Quebras", f"R$ {perdas_tot:,.2f}")
 
-            # Detalhamento
+            # --- CORREÇÃO DA TABELA DETALHADA ---
             st.markdown("---")
             st.subheader("Tabela de Dados Financeiros Detalhada")
             df_exib = df_dre_raw.dropna(axis=1, how='all').fillna(0)
             
+            # Formatação Dinâmica Segura
             fmt = {}
             for col in df_exib.columns:
-                if any(x in str(col) for x in ["AV-Rl", "%Meta"]): fmt[col] = "{:.2%}"
-                elif any(x in str(col) for x in ["Realizado", "Total"]):
-                    if pd.api.types.is_numeric_dtype(df_exib[col]): fmt[col] = "{:,.0f}"
+                # Só aplica formato numérico se a coluna for do tipo float ou int
+                is_numeric = pd.api.types.is_numeric_dtype(df_exib[col])
+                
+                if is_numeric:
+                    if any(x in str(col) for x in ["AV-RI", "AV-Rl", "%", "Meta"]):
+                        fmt[col] = "{:.2%}"
+                    elif any(x in str(col) for x in ["Realizado", "Total", "2025"]):
+                        fmt[col] = "{:,.0f}"
 
             st.dataframe(df_exib.style.format(fmt, na_rep="-"), use_container_width=True, hide_index=True)
 
