@@ -17,7 +17,6 @@ arquivo_subido = st.sidebar.file_uploader(
     key="proj_file"
 )
 
-# Inicializa variável de taxas para evitar erro de escopo
 taxas = []
 
 if arquivo_subido is not None:
@@ -29,7 +28,6 @@ if arquivo_subido is not None:
 
         df_growth = df_growth.dropna(axis=1, how='all')
 
-        # --- PARÂMETROS ---
         st.sidebar.header("Configurações da Projeção")
         valor_estudo = st.sidebar.number_input(
             "Venda Alvo (Estudo 100%):", 
@@ -38,7 +36,6 @@ if arquivo_subido is not None:
             step=10000.0
         )
         
-        # Filtragem por estado
         estados_alvo = ["RS", "SC", "PR"]
         colunas_disponiveis = [c for c in df_growth.columns if any(est in str(c) for est in estados_alvo)]
         
@@ -66,7 +63,6 @@ if arquivo_subido is not None:
             df_res["% Maturação"] = (df_res["Faturamento"] / valor_estudo) * 100
             meses_grafico = [1, 3, 6, 9, 12, 18, 24, 30, 36]
 
-            # --- DASHBOARD DE PROJEÇÃO ---
             c1, c2 = st.columns([2, 1])
             with c1:
                 fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
@@ -216,7 +212,6 @@ if arquivo_dre is not None:
 
         vals = {k: pegar_v(k) for k in termos.keys()}
 
-        # 1. INDICADORES PRINCIPAIS
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Faturamento", f"R$ {vals['RB']:,.2f}")
         c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
@@ -227,7 +222,6 @@ if arquivo_dre is not None:
         perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
         c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
 
-        # 2. DIAGNÓSTICO
         st.subheader("Análise de Performance Operacional")
         col_diag, col_graf = st.columns([1, 1])
         
@@ -244,10 +238,6 @@ if arquivo_dre is not None:
             if perc_perda > 1.5:
                 st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): Acima do limite de 1.5%.")
 
-            perc_folha = (abs(vals['FOLHA']) / vals['RB'] * 100) if vals['RB'] > 0 else 0
-            if perc_folha > 12:
-                st.info(f"Indicador de Folha: {perc_folha:.1f}% do faturamento.")
-
         with col_graf:
             df_gastos = pd.DataFrame({
                 "Conta": ["Folha", "ADM", "Operação", "Quebra/Perdas"],
@@ -259,13 +249,16 @@ if arquivo_dre is not None:
                                    color_discrete_sequence=px.colors.sequential.RdBu)
             st.plotly_chart(fig_ofensores, use_container_width=True)
 
-        # --- TABELA DE DADOS FINANCEIROS DETALHADA COM ESTILIZAÇÃO ---
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
         
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-        # Identificação dinâmica de colunas
+        # --- ADIÇÃO DA CONTAGEM DE LINHAS ---
+        contagem_linhas = range(1, len(df_exibicao) + 1)
+        df_exibicao.insert(0, 'Nº', contagem_linhas)
+
+        # Identificação dinâmica de colunas (ajustado para ignorar a nova coluna 0)
         colunas_avri = []
         colunas_realizado = []
         
@@ -291,7 +284,7 @@ if arquivo_dre is not None:
                 return f"{int(round(num)):,}".replace(',', '.')
             except: return val
 
-        # Lógica de Destaque
+        # Lógica de Destaque (Ajustada: Conta agora está no índice 2)
         contas_destaque = [
             "Receita Bruta", "Deduções", "Receita Líquida", "CMV", 
             "Perdas Vencidos Liquido", "Discrepância _ Estoque", 
@@ -300,16 +293,14 @@ if arquivo_dre is not None:
         ]
 
         def estilo_linhas_mestre(row):
-            texto_celula = str(row.iloc[1]).strip()
-            # Verifica se o nome da conta está presente na lista de destaque
+            texto_celula = str(row.iloc[2]).strip() # Alterado de 1 para 2
             if any(conta.lower() in texto_celula.lower() for conta in contas_destaque):
-                # Azul claro de fundo, negrito e uma borda inferior para o efeito de sombra
                 return ['background-color: #f0f7ff; font-weight: bold; border-bottom: 1.5px solid #d1dbe5;'] * len(row)
             return [''] * len(row)
 
-        col_pct_alvo = list(set([2] + colunas_avri))
+        # Ajuste no índice fixo de Meta (era 2, agora é 3 devido ao Nº inserido)
+        col_pct_alvo = list(set([3] + colunas_avri))
         
-        # Aplicação final do Style e Dataframe
         df_estilizado = (
             df_exibicao.style
             .apply(estilo_linhas_mestre, axis=1)
