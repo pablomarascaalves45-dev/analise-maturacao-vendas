@@ -189,6 +189,7 @@ if arquivo_dre is not None:
         
         termos = {
             "RB": "Receita Bruta",
+            "RL": "Receita Líquida",
             "MC": "Margem de Contribuição",
             "PVL": "Perdas Vencidos Liquido",
             "DISC": "Discrepância _ Estoque",
@@ -212,6 +213,9 @@ if arquivo_dre is not None:
 
         vals = {k: pegar_v(k) for k in termos.keys()}
 
+        # Define a Receita Líquida como base de cálculo para os indicadores
+        receita_base = vals['RL'] if vals['RL'] > 0 else vals['RB']
+
         match_cmv = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains("CMV", case=False, na=False)]
         cmv_total = 0.0
         if not match_cmv.empty:
@@ -220,7 +224,7 @@ if arquivo_dre is not None:
 
         # --- MÉTRICAS ---
         c1, c2, c3, c4, c5 = st.columns(5) 
-        c1.metric("Receita Bruta", f"R$ {vals['RB']:,.2f}")
+        c1.metric("Receita Líquida", f"R$ {vals['RL']:,.2f}")
         c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
         
         res_cor = "normal" if vals['RES'] >= 0 else "inverse"
@@ -229,7 +233,8 @@ if arquivo_dre is not None:
         perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
         c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
 
-        perc_cmv = (abs(cmv_total) / vals['RB'] * 100) if vals['RB'] > 0 else 0
+        # Cálculo do CMV sobre a Receita Líquida
+        perc_cmv = (abs(cmv_total) / receita_base * 100) if receita_base > 0 else 0
         cor_cmv = "inverse" if perc_cmv > 65 else "normal"
         c5.metric("CMV", f"R$ {cmv_total:,.2f}", delta=f"{perc_cmv:.2f}%", delta_color=cor_cmv)
 
@@ -241,12 +246,13 @@ if arquivo_dre is not None:
             if vals['RES'] < 0:
                 st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
             
-            perc_margem = (vals['MC'] / vals['RB'] * 100) if vals['RB'] > 0 else 0
+            # Margem calculada sobre a Receita Líquida
+            perc_margem = (vals['MC'] / receita_base * 100) if receita_base > 0 else 0
             if perc_margem < 35:
-                # Texto atualizado para "A meta é 35%"
                 st.warning(f"Margem Abaixo da Meta ({perc_margem:.1f}%): A meta é 35%.")
             
-            perc_perda = (perdas_totais / vals['RB'] * 100) if vals['RB'] > 0 else 0
+            # Perdas calculadas sobre a Receita Líquida
+            perc_perda = (perdas_totais / receita_base * 100) if receita_base > 0 else 0
             if perc_perda > 1.5:
                 st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): Acima do limite de 1.5%.")
 
