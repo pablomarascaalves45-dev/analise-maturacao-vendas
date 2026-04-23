@@ -69,7 +69,14 @@ if arquivo_subido is not None:
                              title=f"Evolução de Faturamento Projetada - {estado_sel}",
                              template="plotly_white", color_discrete_sequence=["#00CC96"])
                 fig.update_layout(xaxis=dict(tickmode='array', tickvals=meses_grafico), yaxis_tickformat="R$,.2f")
+                
+                # Meta 100% (Horizontal)
                 fig.add_hline(y=valor_estudo, line_dash="dash", line_color="red", annotation_text="Meta 100%")
+                
+                # LINHA DE CORTE 12 MESES (Vertical) - Adição solicitada
+                fig.add_vline(x=12, line_dash="dot", line_color="orange", 
+                             annotation_text="Corte 12 Meses", annotation_position="top left")
+                
                 st.plotly_chart(fig, use_container_width=True)
                 
             with c2:
@@ -213,7 +220,6 @@ if arquivo_dre is not None:
 
         vals = {k: pegar_v(k) for k in termos.keys()}
 
-        # Base de cálculo definida como Receita Líquida (ou Bruta se líquida for zero)
         receita_base = vals['RL'] if vals['RL'] > 0 else vals['RB']
 
         match_cmv = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains("CMV", case=False, na=False)]
@@ -222,7 +228,6 @@ if arquivo_dre is not None:
             val_cmv = df_dre_raw.iloc[match_cmv.index[0], 3]
             cmv_total = pd.to_numeric(val_cmv, errors='coerce') if pd.notnull(val_cmv) else 0.0
 
-        # --- MÉTRICAS ---
         c1, c2, c3, c4, c5 = st.columns(5) 
         c1.metric("Receita Líquida", f"R$ {vals['RL']:,.2f}")
         c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
@@ -237,7 +242,6 @@ if arquivo_dre is not None:
         cor_cmv = "inverse" if perc_cmv > 65 else "normal"
         c5.metric("CMV", f"R$ {cmv_total:,.2f}", delta=f"{perc_cmv:.2f}%", delta_color=cor_cmv)
 
-        # --- CÁLCULOS BASEADOS NA VENDA LÍQUIDA ---
         perc_folha = (abs(vals['FOLHA']) / receita_base * 100) if receita_base > 0 else 0
         perc_adm = (abs(vals['ADM']) / receita_base * 100) if receita_base > 0 else 0
         perc_oper = (abs(vals['OPER']) / receita_base * 100) if receita_base > 0 else 0
@@ -256,7 +260,6 @@ if arquivo_dre is not None:
                 st.warning(f"Margem Abaixo da Meta ({perc_margem:.2f}%): A meta é 35%.")
             
             if perc_perda > 1.5:
-                # ALTERAÇÃO SOLICITADA: Somente texto alterado, mantendo o limite técnico de 1.5
                 st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): A meta é 0,66%.")
 
         with col_graf:
@@ -275,13 +278,10 @@ if arquivo_dre is not None:
         st.subheader("Tabela de Dados Financeiros Detalhada")
         
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
-
-        contagem_linhas = range(1, len(df_exibicao) + 1)
-        df_exibicao.insert(0, 'Nº', contagem_linhas)
+        df_exibicao.insert(0, 'Nº', range(1, len(df_exibicao) + 1))
 
         colunas_avri = []
         colunas_realizado = []
-        
         for col_idx in range(len(df_exibicao.columns)):
             cabecalho_texto = df_exibicao.iloc[0:4, col_idx].astype(str).str.upper()
             if cabecalho_texto.str.contains("AV-RI").any() or cabecalho_texto.str.contains("AV-RL").any():
