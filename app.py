@@ -6,104 +6,83 @@ import io
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="Curva de Maturação", layout="wide")
 
+# --- BASE DE DADOS INTEGRADA (EXATAMENTE IGUAL À PLANILHA) ---
+data_curva = {
+    "RS": [0.00, 0.08, 0.07, 0.04, 0.03, 0.02, 0.02, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
+    "SC": [0.00, 0.12, 0.10, 0.08, 0.06, 0.05, 0.04, 0.03, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
+    "PR": [0.00, 0.12, 0.10, 0.08, 0.06, 0.05, 0.04, 0.03, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]
+}
+
 st.title("Projeção de Maturação: Analisador de Dados")
 st.markdown("---")
 
-# 2. ENTRADA DE DADOS DE PROJEÇÃO
-st.sidebar.header("Dados de Projeção")
-arquivo_subido = st.sidebar.file_uploader(
-    "Upload da planilha de Taxas de Crescimento:", 
-    type=["xlsx", "xls", "csv"],
-    key="proj_file"
+# 2. ENTRADA DE DADOS DE PROJEÇÃO (AGORA AUTOMATIZADA)
+st.sidebar.header("Configurações da Projeção")
+
+valor_estudo = st.sidebar.number_input(
+    "Venda Alvo (Estudo 100%):", 
+    min_value=0.0, 
+    value=400000.0, 
+    step=10000.0
 )
 
-taxas = []
+estados_alvo = ["RS", "SC", "PR"]
+estado_sel = st.sidebar.selectbox("Estado para análise:", estados_alvo)
 
-if arquivo_subido is not None:
-    try:
-        if "csv" in arquivo_subido.name.lower():
-            df_growth = pd.read_csv(arquivo_subido, decimal=',', engine='python')
-        else:
-            df_growth = pd.read_excel(arquivo_subido)
+# Carrega as taxas da base salva
+taxas = data_curva[estado_sel]
 
-        df_growth = df_growth.dropna(axis=1, how='all')
+# Lógica de Projeção
+projecao = []
+percentual_inicial = 0.77 if estado_sel == "RS" else 0.60
+valor_atual = valor_estudo * percentual_inicial
+projecao.append(valor_atual)
 
-        st.sidebar.header("Configurações da Projeção")
-        valor_estudo = st.sidebar.number_input(
-            "Venda Alvo (Estudo 100%):", 
-            min_value=0.0, 
-            value=400000.0, 
-            step=10000.0
-        )
-        
-        estados_alvo = ["RS", "SC", "PR"]
-        colunas_disponiveis = [c for c in df_growth.columns if any(est in str(c) for est in estados_alvo)]
-        
-        if colunas_disponiveis:
-            estado_sel = st.sidebar.selectbox("Estado para análise:", estados_alvo)
-            cols_matching = [c for c in df_growth.columns if estado_sel in str(c)]
-            col_nome_real = cols_matching[-1] 
-            taxas = pd.to_numeric(df_growth[col_nome_real], errors='coerce').fillna(0).values
+for i in range(1, 36):
+    taxa_mes = taxas[i]
+    valor_atual = valor_atual * (1 + taxa_mes)
+    projecao.append(valor_atual)
 
-            projecao = []
-            percentual_inicial = 0.77 if estado_sel == "RS" else 0.60
-            valor_atual = valor_estudo * percentual_inicial
-            projecao.append(valor_atual)
-            
-            for i in range(1, 36):
-                if i < len(taxas):
-                    taxa_mes = taxas[i]
-                    valor_atual = valor_atual * (1 + taxa_mes)
-                    projecao.append(valor_atual)
-            
-            df_res = pd.DataFrame({
-                "Mês": range(1, len(projecao) + 1),
-                "Faturamento": projecao
-            })
-            df_res["% Maturação"] = (df_res["Faturamento"] / valor_estudo) * 100
-            meses_grafico = [1, 3, 6, 9, 12, 18, 24, 30, 36]
+df_res = pd.DataFrame({
+    "Mês": range(1, len(projecao) + 1),
+    "Faturamento": projecao
+})
+df_res["% Maturação"] = (df_res["Faturamento"] / valor_estudo) * 100
+meses_grafico = [1, 3, 6, 9, 12, 18, 24, 30, 36]
 
-            c1, c2 = st.columns([2, 1])
-            with c1:
-                fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
-                             title=f"Evolução de Faturamento Projetada - {estado_sel}",
-                             template="plotly_white", color_discrete_sequence=["#00CC96"])
-                fig.update_layout(xaxis=dict(tickmode='array', tickvals=meses_grafico), yaxis_tickformat="R$,.2f")
-                
-                # Meta 100% (Horizontal)
-                fig.add_hline(y=valor_estudo, line_dash="dash", line_color="red", annotation_text="Meta 100%")
-                
-                # LINHA DE CORTE 12 MESES (Vertical) - Adição solicitada
-                fig.add_vline(x=12, line_dash="dot", line_color="orange", 
-                             annotation_text="Corte 12 Meses", annotation_position="top left")
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-            with c2:
-                st.subheader("Marcos de Maturação")
-                st.dataframe(df_res.style.format({"Faturamento": "R$ {:,.2f}", "% Maturação": "{:.2f}%"}),
-                            height=450, use_container_width=True, hide_index=True)
+c1, c2 = st.columns([2, 1])
+with c1:
+    fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
+                 title=f"Evolução de Faturamento Projetada - {estado_sel}",
+                 template="plotly_white", color_discrete_sequence=["#00CC96"])
+    fig.update_layout(xaxis=dict(tickmode='array', tickvals=meses_grafico), yaxis_tickformat="R$,.2f")
+    fig.add_hline(y=valor_estudo, line_dash="dash", line_color="red", annotation_text="Meta 100%")
+    fig.add_vline(x=12, line_dash="dot", line_color="orange", 
+                 annotation_text="Corte 12 Meses", annotation_position="top left")
+    st.plotly_chart(fig, use_container_width=True)
 
-            st.markdown("---")
-            m1, m12, m2, m3 = st.columns(4)
-            m1.metric("Venda Inicial (Mês 1)", f"R$ {projecao[0]:,.2f}", delta=f"{int(percentual_inicial*100)}% do Alvo")
-            
-            v_12 = projecao[11] if len(projecao) >= 12 else 0
-            perc_12 = (v_12 / valor_estudo) * 100 if valor_estudo > 0 else 0
-            m12.metric("Venda 12 Meses", f"R$ {v_12:,.2f}", delta=f"{perc_12:.2f}% do Alvo")
-            
-            v_final = projecao[-1]
-            perc_final = (v_final / valor_estudo) * 100 if valor_estudo > 0 else 0
-            m2.metric("Venda Final (Mês 36)", f"R$ {v_final:,.2f}", delta=f"{perc_final:.2f}% do Alvo")
-            
-            atingiu = df_res[df_res["% Maturação"] >= 100]
-            mes_mat = atingiu["Mês"].iloc[0] if not atingiu.empty else "Acima de 36m"
-            m3.metric("Maturação (100%)", f"Mês {mes_mat}")
+with c2:
+    st.subheader("Marcos de Maturação")
+    st.dataframe(df_res.style.format({"Faturamento": "R$ {:,.2f}", "% Maturação": "{:.2f}%"}),
+                height=450, use_container_width=True, hide_index=True)
 
-    except Exception as e:
-        st.error(f"Erro na Projeção: {e}")
+st.markdown("---")
+m1, m12, m2, m3 = st.columns(4)
+m1.metric("Venda Inicial (Mês 1)", f"R$ {projecao[0]:,.2f}", delta=f"{int(percentual_inicial*100)}% do Alvo")
 
-# --- SEÇÃO: HISTÓRICO REAL ---
+v_12 = projecao[11] if len(projecao) >= 12 else 0
+perc_12 = (v_12 / valor_estudo) * 100 if valor_estudo > 0 else 0
+m12.metric("Venda 12 Meses", f"R$ {v_12:,.2f}", delta=f"{perc_12:.2f}% do Alvo")
+
+v_final = projecao[-1]
+perc_final = (v_final / valor_estudo) * 100 if valor_estudo > 0 else 0
+m2.metric("Venda Final (Mês 36)", f"R$ {v_final:,.2f}", delta=f"{perc_final:.2f}% do Alvo")
+
+atingiu = df_res[df_res["% Maturação"] >= 100]
+mes_mat = atingiu["Mês"].iloc[0] if not atingiu.empty else "Acima de 36m"
+m3.metric("Maturação (100%)", f"Mês {mes_mat}")
+
+# --- SEÇÃO: HISTÓRICO REAL (Mantida original) ---
 st.markdown("### Histórico Real vs Crescimento Projetado")
 st.sidebar.markdown("---")
 st.sidebar.header("Dados Históricos")
@@ -178,7 +157,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no processamento do histórico: {e}")
 
-# --- SEÇÃO DRE ---
+# --- SEÇÃO DRE (Mantida original) ---
 st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 
@@ -219,7 +198,6 @@ if arquivo_dre is not None:
             return 0.0
 
         vals = {k: pegar_v(k) for k in termos.keys()}
-
         receita_base = vals['RL'] if vals['RL'] > 0 else vals['RB']
 
         match_cmv = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains("CMV", case=False, na=False)]
@@ -255,10 +233,8 @@ if arquivo_dre is not None:
             st.write("Alertas de Indicadores (Base: Receita Líquida):")
             if vals['RES'] < 0:
                 st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
-            
             if perc_margem < 35:
                 st.warning(f"Margem Abaixo da Meta ({perc_margem:.2f}%): A meta é 35%.")
-            
             if perc_perda > 1.5:
                 st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): A meta é 0,66%.")
 
