@@ -9,11 +9,12 @@ st.set_page_config(page_title="Curva de Maturação", layout="wide")
 st.title("Projeção de Maturação: Analisador de Dados")
 st.markdown("---")
 
-# Função auxiliar para limpeza numérica
+# Função auxiliar para limpeza numérica (Vital para evitar erros de conversão)
 def clean_numeric(val):
-    if pd.isna(val) or val == "" or val == "-":
+    if pd.isna(val) or val == "" or val == "-" or val == " ":
         return 0.0
     try:
+        # Remove símbolos comuns e ajusta separadores
         s = str(val).replace('R$', '').replace('%', '').strip()
         if ',' in s and '.' in s:
             s = s.replace('.', '').replace(',', '.')
@@ -23,8 +24,8 @@ def clean_numeric(val):
     except:
         return 0.0
 
-# 2. ENTRADA DE DADOS DE PROJEÇÃO
-st.sidebar.header("Dados de Projeção")
+# 2. SEÇÃO: ENTRADA DE DADOS DE PROJEÇÃO
+st.sidebar.header("1. Dados de Projeção")
 arquivo_subido = st.sidebar.file_uploader(
     "Upload da planilha de Taxas de Crescimento:", 
     type=["xlsx", "xls", "csv"],
@@ -109,10 +110,10 @@ if arquivo_subido is not None:
     except Exception as e:
         st.error(f"Erro na Projeção: {e}")
 
-# --- SEÇÃO: HISTÓRICO REAL ---
+# 3. SEÇÃO: HISTÓRICO REAL
 st.markdown("### Histórico Real vs Crescimento Projetado")
 st.sidebar.markdown("---")
-st.sidebar.header("Dados Históricos")
+st.sidebar.header("2. Dados Históricos")
 arquivo_historico = st.sidebar.file_uploader(
     "Upload da planilha de Vendas Realizadas (12 Meses):", 
     type=["xlsx", "xls", "csv"],
@@ -156,105 +157,116 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
-# --- NOVA SEÇÃO: ANÁLISE DE EXPANSÃO (NEGATIVAS) ---
+# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (EXPANSÃO)
 st.markdown("---")
 st.header("Análise Avançada de Lojas Negativas (Expansão)")
-
 st.sidebar.markdown("---")
-st.sidebar.header("Análise de Negativas")
-arquivo_negativas = st.sidebar.file_uploader(
-    "Upload da planilha de Lojas Negativas:", 
-    type=["xlsx", "xls", "csv"],
-    key="neg_file"
-)
+st.sidebar.header("3. Análise de Negativas")
+arquivo_negativas = st.sidebar.file_uploader("Upload da planilha de Lojas Negativas:", type=["xlsx", "xls", "csv"], key="neg_file")
 
 if arquivo_negativas is not None:
     try:
         df_neg = pd.read_csv(arquivo_negativas, engine='python') if "csv" in arquivo_negativas.name.lower() else pd.read_excel(arquivo_negativas)
         df_neg.columns = [str(c).strip() for c in df_neg.columns]
-        
-        # Mapeamento Dinâmico
         col_ro_acum = next((c for c in df_neg.columns if 'RO Acum' in c), None)
         col_desc = next((c for c in df_neg.columns if 'Desc_CC' in c), None)
-        col_aluguel_perc = next((c for c in df_neg.columns if '%Aluguel' in c), None)
-        col_vagas = next((c for c in df_neg.columns if 'Vagas' in c), None)
         col_posicao = next((c for c in df_neg.columns if 'Posição Loja' in c), None)
+        col_vagas = next((c for c in df_neg.columns if 'Vagas' in c), None)
         col_mercado = next((c for c in df_neg.columns if 'Próximo a mercado' in c), None)
 
         if col_ro_acum and col_desc:
-            # Tratamento
             df_neg[col_ro_acum] = df_neg[col_ro_acum].apply(clean_numeric)
-            if col_aluguel_perc: df_neg[col_aluguel_perc] = df_neg[col_aluguel_perc].apply(clean_numeric)
-            
             df_ana = df_neg[df_neg[col_desc].notna()].copy()
-            
-            # Painel de Insights
             st.subheader("🔍 Diagnóstico de Padrões")
             c1, c2, c3 = st.columns(3)
-            
             with c1:
                 if col_posicao:
                     per_pos = df_ana.groupby(col_posicao)[col_ro_acum].mean().sort_values()
-                    fig_pos = px.bar(per_pos, orientation='h', title="Impacto: Posição da Loja (Média RO)", color_continuous_scale='Reds')
-                    st.plotly_chart(fig_pos, use_container_width=True)
-            
+                    st.plotly_chart(px.bar(per_pos, orientation='h', title="Posição vs RO Médio"), use_container_width=True)
             with c2:
                 if col_vagas:
                     per_vagas = df_ana.groupby(col_vagas)[col_ro_acum].mean().sort_values()
-                    fig_vagas = px.bar(per_vagas, title="Impacto: Disponibilidade de Vagas", color_discrete_sequence=['#FFA15A'])
-                    st.plotly_chart(fig_vagas, use_container_width=True)
-
+                    st.plotly_chart(px.bar(per_vagas, title="Vagas vs RO Médio"), use_container_width=True)
             with c3:
                 if col_mercado:
                     per_mer = df_ana.groupby(col_mercado)[col_ro_acum].mean().sort_values()
-                    fig_mer = px.pie(names=per_mer.index, values=abs(per_mer.values), title="Prejuízo: Próximo a Mercado?")
-                    st.plotly_chart(fig_mer, use_container_width=True)
+                    st.plotly_chart(px.pie(names=per_mer.index, values=abs(per_mer.values), title="Prejuízo Próximo a Mercado?"), use_container_width=True)
+            
+            st.subheader("📊 Top 15 Lojas com Maior Déficit")
+            st.plotly_chart(px.bar(df_ana.sort_values(by=col_ro_acum).head(15), x=col_desc, y=col_ro_acum, color_continuous_scale='Reds_r'), use_container_width=True)
+    except Exception as e: st.error(f"Erro em Negativas: {e}")
 
-            # Análise de Ofensores
-            st.subheader("📊 Top 15 Lojas com Maior Déficit Acumulado")
-            df_top_neg = df_ana.sort_values(by=col_ro_acum).head(15)
-            fig_ofensores = px.bar(df_top_neg, x=col_desc, y=col_ro_acum, color=col_ro_acum,
-                                   hover_data=[col_aluguel_perc] if col_aluguel_perc else [],
-                                   color_continuous_scale='Reds_r', text_auto='.2s')
-            st.plotly_chart(fig_ofensores, use_container_width=True)
-
-            # Tabela de Dados com Filtro
-            st.subheader("📋 Matriz de Dados Completa")
-            st.dataframe(df_ana.style.background_gradient(subset=[col_ro_acum], cmap='Reds_r'), use_container_width=True)
-        else:
-            st.warning("Colunas essenciais não detectadas no arquivo de Negativas.")
-    except Exception as e:
-        st.error(f"Erro na análise de Negativas: {e}")
-
-# --- SEÇÃO DRE (Estrutura Mantida) ---
+# 5. SEÇÃO: DRE E RENTABILIDADE (RESTAURADA E PROTEGIDA)
 st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 st.sidebar.markdown("---")
-st.sidebar.header("Dados Financeiros (DRE)")
+st.sidebar.header("4. Dados Financeiros (DRE)")
 arquivo_dre = st.sidebar.file_uploader("Upload da planilha de DRE:", type=["xlsx", "xls", "csv"], key="dre_file")
 
 if arquivo_dre is not None:
     try:
         df_dre_raw = pd.read_excel(arquivo_dre, header=None)
-        termos = {"RB": "Receita Bruta", "RL": "Receita Líquida", "MC": "Margem de Contribuição", "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque", "FOLHA": "Despesas Folha", "ADM": "Despesas ADM", "OPER": "Despesas Operação", "RES": "Resultado Operacional"}
+        termos = {
+            "RB": "Receita Bruta", "RL": "Receita Líquida", "MC": "Margem de Contribuição",
+            "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque",
+            "FOLHA": "Despesas Folha", "ADM": "Despesas ADM", "OPER": "Despesas Operação",
+            "RES": "Resultado Operacional", "CMV": "CMV"
+        }
         indices = {}
         for chave, texto in termos.items():
             match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(texto, case=False, na=False)]
             if not match.empty: indices[chave] = match.index[0]
+
         def pegar_v(chave):
             if chave in indices:
                 val = df_dre_raw.iloc[indices[chave], 3] 
-                return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
+                return clean_numeric(val)
             return 0.0
+
         vals = {k: pegar_v(k) for k in termos.keys()}
-        receita_base = vals['RL'] if vals['RL'] > 0 else vals['RB']
-        
-        c1, c2, c3, c4 = st.columns(4) 
+        receita_base = vals['RL'] if vals['RL'] > 0 else (vals['RB'] if vals['RB'] > 0 else 1.0)
+        perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
+
+        # KPIs Restaurados
+        c1, c2, c3, c4, c5 = st.columns(5) 
         c1.metric("Receita Líquida", f"R$ {vals['RL']:,.2f}")
         c2.metric("Margem Contrib.", f"R$ {vals['MC']:,.2f}")
         c3.metric("Resultado Oper.", f"R$ {vals['RES']:,.2f}", delta_color="normal" if vals['RES'] >= 0 else "inverse")
-        c4.metric("Perdas/Discrep.", f"R$ {(abs(vals['PVL']) + abs(vals['DISC'])):,.2f}")
+        c4.metric("Perdas/Discrep.", f"R$ {perdas_totais:,.2f}")
+        perc_cmv = (abs(vals['CMV']) / receita_base) * 100
+        c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{perc_cmv:.1f}%")
 
-        st.dataframe(df_dre_raw.dropna(axis=1, how='all').fillna(""), use_container_width=True)
-    except Exception as e:
-        st.error(f"Erro no DRE: {e}")
+        # Diagnóstico e Gráfico Original
+        st.subheader("Análise de Performance Operacional")
+        col_diag, col_graf = st.columns([1, 1])
+        with col_diag:
+            st.write("**Alertas de Indicadores:**")
+            perc_margem = (vals['MC'] / receita_base) * 100
+            perc_perda = (perdas_totais / receita_base) * 100
+            if vals['RES'] < 0: st.error(f"🔴 Déficit operacional de R$ {abs(vals['RES']):,.2f}")
+            if perc_margem < 35: st.warning(f"⚠️ Margem Baixa: {perc_margem:.2f}% (Meta: 35%)")
+            if perc_perda > 1.5: st.warning(f"⚠️ Quebra Elevada: {perc_perda:.2f}% (Meta: 0,66%)")
+
+        with col_graf:
+            df_gastos = pd.DataFrame({
+                "Conta": ["Folha", "ADM", "Operação", "Quebra"],
+                "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
+            })
+            st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Composição de Gastos"), use_container_width=True)
+
+        # Tabela Detalhada com Proteção contra KeyError
+        st.subheader("Tabela de Dados Financeiros Detalhada")
+        df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
+        def estilo_linhas_mestre(row):
+            texto = str(row.iloc[1]).upper()
+            if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
+                return ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
+            return [''] * len(row)
+        
+        df_final = df_exibicao.style.apply(estilo_linhas_mestre, axis=1)
+        if len(df_exibicao.columns) > 3: # Proteção aqui
+            df_final = df_final.format(lambda x: f"R$ {clean_numeric(x):,.2f}" if clean_numeric(x) != 0 else x, subset=[df_exibicao.columns[3]])
+        
+        st.dataframe(df_final, use_container_width=True, hide_index=True)
+
+    except Exception as e: st.error(f"Erro no DRE: {e}")
