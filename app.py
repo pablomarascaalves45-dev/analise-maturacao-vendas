@@ -156,7 +156,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
-# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (FOCO NO AJUSTE DO GRÁFICO TOP 15)
+# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (AJUSTE SOLICITADO: CMV ABAIXO DA MULTA)
 st.markdown("---")
 st.header("Análise Avançada de Lojas Negativas (Expansão)")
 st.sidebar.markdown("---")
@@ -199,87 +199,66 @@ if arquivo_negativas is not None:
             
             st.subheader("📊 Top 15 Lojas com Maior Déficit (Análise RO vs Multa)")
             df_top15 = df_ana.sort_values(by=col_ro_acum).head(15).copy()
-            
+
             # --- LEGENDA DO CMV ---
             st.markdown("""
                 <div style="display: flex; gap: 20px; margin-bottom: 15px; font-size: 14px; font-weight: bold;">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="width: 15px; height: 15px; background-color: #e8f5e9; border: 1px solid #28a745; border-radius: 4px;"></div>
+                        <div style="width: 15px; height: 15px; background-color: #28a745; border-radius: 4px;"></div>
                         <span style="color: #28a745;">CMV Dentro da Meta (≤ 65%)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="width: 15px; height: 15px; background-color: #fdecea; border: 1px solid #dc3545; border-radius: 4px;"></div>
+                        <div style="width: 15px; height: 15px; background-color: #dc3545; border-radius: 4px;"></div>
                         <span style="color: #dc3545;">CMV Acima da Meta (> 65%)</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
 
-            # --- BALÕES DE CMV ACIMA DO GRÁFICO ---
-            if col_cmv_neg:
-                cols_baloes = st.columns(len(df_top15))
-                for idx, (_, row) in enumerate(df_top15.iterrows()):
-                    val_cmv = row[col_cmv_neg]
-                    # Garante que o valor apareça como percentual (ex: 68.2%)
-                    val_exibir = val_cmv if val_cmv > 1 else val_cmv * 100
-                    
-                    # Estilo condicional: verde (meta) ou vermelho (fora da meta)
-                    cor_fundo = "#e8f5e9" if val_exibir <= 65 else "#fdecea"
-                    cor_texto = "#28a745" if val_exibir <= 65 else "#dc3545"
-                    icone = "↑" if val_exibir > 65 else "↓"
-                    
-                    cols_baloes[idx].markdown(
-                        f"""
-                        <div style="
-                            background-color: {cor_fundo}; 
-                            color: {cor_texto}; 
-                            padding: 6px 2px; 
-                            border-radius: 12px; 
-                            text-align: center; 
-                            font-size: 13px; 
-                            font-weight: 800; 
-                            border: 1px solid {cor_texto};
-                            box-shadow: 0px 2px 4px rgba(0,0,0,0.1);
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            min-height: 40px;
-                        ">
-                            {icone} {val_exibir:.1f}%
-                        </div>
-                        """, unsafe_allow_html=True
-                    )
+            # --- CRIAÇÃO DO TEXTO CUSTOMIZADO (MULTA + CMV) ---
+            # Geramos uma nova coluna que combina Multa e CMV para exibir no gráfico
+            def format_label(row):
+                m = f"Multa: R$ {row[col_multa]:,.2f}" if col_multa else ""
+                if col_cmv_neg:
+                    v = row[col_cmv_neg]
+                    v_perc = v if v > 1 else v * 100
+                    c = "↑" if v_perc > 65 else "↓"
+                    # Adiciona quebra de linha <br> para o CMV ficar abaixo da Multa
+                    return f"{m}<br>CMV: {c} {v_perc:.1f}%"
+                return m
 
-            # --- GRÁFICO DE BARRAS TOP 15 ---
+            df_top15['label_grafico'] = df_top15.apply(format_label, axis=1)
+
+            # --- GRÁFICO COM TEXTO PERSONALIZADO ---
             fig_top = px.bar(
                 df_top15, 
                 x=col_desc, 
                 y=col_ro_acum,
                 color=col_ro_acum,
                 color_continuous_scale='Reds_r',
-                text=col_multa if col_multa else None
+                text='label_grafico' # Usamos a nova coluna aqui
             )
             
             fig_top.update_traces(
-                texttemplate='Multa: R$ %{text:,.2f}' if col_multa else None, 
                 textposition='outside',
                 marker_line_color='rgb(8,48,107)',
                 marker_line_width=1.5,
-                opacity=0.9
+                opacity=0.9,
+                textfont=dict(size=11, color="black", family="Arial Black")
             )
             
             fig_top.update_layout(
                 yaxis_title="RO Acumulado (R$)", 
                 xaxis_title=None, 
                 coloraxis_showscale=False,
-                margin=dict(t=10, b=0),
-                height=500,
+                margin=dict(t=40, b=0), # Aumentado margem superior para caber o texto
+                height=600,
                 template="plotly_white"
             )
             st.plotly_chart(fig_top, use_container_width=True)
 
     except Exception as e: st.error(f"Erro em Negativas: {e}")
 
-# 5. SEÇÃO: DRE E RENTABILIDADE
+# 5. SEÇÃO: DRE E RENTABILIDADE (INALTERADO)
 st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 st.sidebar.markdown("---")
