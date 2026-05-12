@@ -179,7 +179,6 @@ if arquivo_negativas is not None:
         if col_ro_acum and col_desc:
             df_neg[col_ro_acum] = df_neg[col_ro_acum].apply(clean_numeric)
             df_ana = df_neg[df_neg[col_desc].notna()].copy()
-            
             if col_multa: df_ana[col_multa] = df_ana[col_multa].apply(clean_numeric)
             if col_cmv_neg: df_ana[col_cmv_neg] = df_ana[col_cmv_neg].apply(clean_numeric)
 
@@ -201,55 +200,48 @@ if arquivo_negativas is not None:
             st.subheader("📊 Top 15 Lojas com Maior Déficit (Análise RO vs Multa)")
             df_top15 = df_ana.sort_values(by=col_ro_acum).head(15).copy()
             
+            st.markdown("""
+                <div style="display: flex; gap: 20px; margin-bottom: 10px; font-size: 14px; font-weight: bold;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 15px; height: 15px; background-color: #e8f5e9; border: 1px solid #28a745; border-radius: 4px;"></div>
+                        <span style="color: #28a745;">CMV Dentro da Meta (≤ 65%)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 15px; height: 15px; background-color: #fdecea; border: 1px solid #dc3545; border-radius: 4px;"></div>
+                        <span style="color: #dc3545;">CMV Acima da Meta (> 65%)</span>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
             if col_cmv_neg:
-                st.markdown("**Indicador de CMV por Loja:**")
                 cols_baloes = st.columns(len(df_top15))
                 for idx, (_, row) in enumerate(df_top15.iterrows()):
                     val_cmv = row[col_cmv_neg]
                     val_exibir = val_cmv if val_cmv > 1 else val_cmv * 100
                     cor_fundo = "#e8f5e9" if val_exibir <= 65 else "#fdecea"
                     cor_texto = "#28a745" if val_exibir <= 65 else "#dc3545"
+                    icone = "↑" if val_exibir > 65 else "↓"
                     cols_baloes[idx].markdown(
-                        f"""<div style="background-color: {cor_fundo}; color: {cor_texto}; padding: 5px 2px; border-radius: 10px; 
-                        text-align: center; font-size: 11px; font-weight: bold; border: 1px solid {cor_texto};">
-                        CMV<br>{val_exibir:.1f}%</div>""", unsafe_allow_html=True
+                        f"""<div style="background-color: {cor_fundo}; color: {cor_texto}; padding: 5px 2px; border-radius: 15px; 
+                        text-align: center; font-size: 12px; font-weight: 800; border: 1px solid {cor_texto}; min-height: 35px;">
+                        {icone} {val_exibir:.1f}%</div>""", unsafe_allow_html=True
                     )
 
-            fig_top = px.bar(
-                df_top15, x=col_desc, y=col_ro_acum, color=col_ro_acum,
-                color_continuous_scale='Reds_r', text=col_multa if col_multa else None
-            )
-            fig_top.update_traces(
-                texttemplate='<b>Multa: R$ %{text:,.2f}</b>' if col_multa else None, 
-                textposition='outside', marker_line_width=1.5, opacity=0.9
-            )
+            fig_top = px.bar(df_top15, x=col_desc, y=col_ro_acum, color=col_ro_acum, color_continuous_scale='Reds_r', text=col_multa if col_multa else None)
+            fig_top.update_traces(texttemplate='Multa: R$ %{text:,.2f}' if col_multa else None, textposition='outside', marker_line_width=1.5, opacity=0.9)
             fig_top.update_layout(yaxis_title="RO Acumulado (R$)", xaxis_title=None, coloraxis_showscale=False, height=500, template="plotly_white")
             st.plotly_chart(fig_top, use_container_width=True)
 
     except Exception as e: st.error(f"Erro em Negativas: {e}")
 
-# 5. SEÇÃO: DRE E RENTABILIDADE (AJUSTADA PARA MÚLTIPLOS ARQUIVOS)
+# 5. SEÇÃO: DRE E RENTABILIDADE
 st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 st.sidebar.markdown("---")
 st.sidebar.header("4. Dados Financeiros (DRE)")
+arquivo_dre = st.sidebar.file_uploader("Upload da planilha de DRE:", type=["xlsx", "xls", "csv"], key="dre_file")
 
-# AJUSTE: Múltiplos arquivos habilitados
-arquivos_dre = st.sidebar.file_uploader(
-    "Upload das planilhas de DRE:", 
-    type=["xlsx", "xls", "csv"], 
-    key="dre_file",
-    accept_multiple_files=True
-)
-
-if arquivos_dre:
-    # Seletor para escolher qual arquivo da "pasta" analisar
-    nome_arquivos = [f.name for f in arquivos_dre]
-    arq_selecionado_nome = st.selectbox("Selecione o arquivo para análise detalhada:", nome_arquivos)
-    
-    # Recupera o objeto do arquivo selecionado
-    arquivo_dre = next(f for f in arquivos_dre if f.name == arq_selecionado_nome)
-
+if arquivo_dre is not None:
     try:
         df_dre_raw = pd.read_excel(arquivo_dre, header=None)
         termos = {
@@ -281,7 +273,7 @@ if arquivos_dre:
         perc_cmv = (abs(vals['CMV']) / receita_base) * 100
         c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{perc_cmv:.1f}%")
 
-        st.subheader(f"Análise de Performance Operacional: {arquivo_dre.name}")
+        st.subheader("Análise de Performance Operacional")
         col_diag, col_graf = st.columns([1, 1])
         with col_diag:
             st.write("**Alertas de Indicadores:**")
@@ -301,11 +293,22 @@ if arquivos_dre:
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
         
-        def estilo_linhas_mestre(row):
+        # --- AJUSTE SOLICITADO: ESTILO DE LINHAS E REALCE POSITIVO ---
+        def estilo_com_realce(row):
+            styles = [''] * len(row)
             texto = str(row.iloc[1]).upper()
+            
+            # 1. Estilo Mestre para linhas principais
             if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
-                return ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
-            return [''] * len(row)
+                styles = ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
+            
+            # 2. Realce Verde para Meses Positivos especificamente na linha do Resultado Operacional
+            if "RESULTADO OPERACIONAL" in texto:
+                for i in range(2, len(row)):
+                    val = clean_numeric(row.iloc[i])
+                    if val > 0:
+                        styles[i] = 'background-color: #c8e6c9; font-weight: bold; color: #2e7d32;' # Verde suave
+            return styles
 
         cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
         cols_percent = [i for i in range(2, len(df_exibicao.columns), 2) if i not in cols_valor]
@@ -315,7 +318,9 @@ if arquivos_dre:
             if num == 0 and (val == "" or val == "-"): return val
             return f"{num:.2f}%" if tipo == "pct" else f"R$ {num:,.2f}"
 
-        df_final = df_exibicao.style.apply(estilo_linhas_mestre, axis=1)
+        # Aplicação dos estilos e formatos
+        df_final = df_exibicao.style.apply(estilo_com_realce, axis=1)
+
         for col_idx in cols_percent:
             df_final = df_final.format(lambda x: formatar_valor(x, "pct"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
         for col_idx in cols_valor:
