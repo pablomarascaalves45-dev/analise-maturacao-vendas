@@ -9,12 +9,11 @@ st.set_page_config(page_title="Curva de Maturação", layout="wide")
 st.title("Projeção de Maturação: Analisador de Dados")
 st.markdown("---")
 
-# Função auxiliar para limpeza numérica (Vital para evitar erros de conversão)
+# Função auxiliar para limpeza numérica
 def clean_numeric(val):
     if pd.isna(val) or val == "" or val == "-" or val == " ":
         return 0.0
     try:
-        # Remove símbolos comuns e ajusta separadores
         s = str(val).replace('R$', '').replace('%', '').strip()
         if ',' in s and '.' in s:
             s = s.replace('.', '').replace(',', '.')
@@ -196,7 +195,7 @@ if arquivo_negativas is not None:
             st.plotly_chart(px.bar(df_ana.sort_values(by=col_ro_acum).head(15), x=col_desc, y=col_ro_acum, color_continuous_scale='Reds_r'), use_container_width=True)
     except Exception as e: st.error(f"Erro em Negativas: {e}")
 
-# 5. SEÇÃO: DRE E RENTABILIDADE (RESTAURADA E PROTEGIDA)
+# 5. SEÇÃO: DRE E RENTABILIDADE
 st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 st.sidebar.markdown("---")
@@ -227,7 +226,6 @@ if arquivo_dre is not None:
         receita_base = vals['RL'] if vals['RL'] > 0 else (vals['RB'] if vals['RB'] > 0 else 1.0)
         perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
 
-        # KPIs Restaurados
         c1, c2, c3, c4, c5 = st.columns(5) 
         c1.metric("Receita Líquida", f"R$ {vals['RL']:,.2f}")
         c2.metric("Margem Contrib.", f"R$ {vals['MC']:,.2f}")
@@ -236,7 +234,6 @@ if arquivo_dre is not None:
         perc_cmv = (abs(vals['CMV']) / receita_base) * 100
         c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{perc_cmv:.1f}%")
 
-        # Diagnóstico e Gráfico Original
         st.subheader("Análise de Performance Operacional")
         col_diag, col_graf = st.columns([1, 1])
         with col_diag:
@@ -254,19 +251,37 @@ if arquivo_dre is not None:
             })
             st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Composição de Gastos"), use_container_width=True)
 
-        # Tabela Detalhada com Proteção contra KeyError
+        # TABELA DETALHADA COM AJUSTE DE PORCENTAGEM (COLUNAS 2, 4, 6... A PARTIR DA LINHA 2)
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
+        
         def estilo_linhas_mestre(row):
             texto = str(row.iloc[1]).upper()
             if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
                 return ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
             return [''] * len(row)
+
+        # Configuração das colunas para formatação
+        # Índices Python (0-based) para colunas visuais 2, 4, 6... até 32
+        cols_percent = [i for i in range(1, 33, 2) if i < len(df_exibicao.columns)]
         
+        def formatar_valor(val, tipo):
+            num = clean_numeric(val)
+            if num == 0 and (val == "" or val == "-"): return val
+            return f"{num:.2f}%" if tipo == "pct" else f"R$ {num:,.2f}"
+
         df_final = df_exibicao.style.apply(estilo_linhas_mestre, axis=1)
-        if len(df_exibicao.columns) > 3: # Proteção aqui
-            df_final = df_final.format(lambda x: f"R$ {clean_numeric(x):,.2f}" if clean_numeric(x) != 0 else x, subset=[df_exibicao.columns[3]])
-        
+
+        # Aplica porcentagem nas colunas solicitadas (2, 4, 6...) a partir da linha 2 (IndexSlice[1:, :])
+        for col_idx in cols_percent:
+            df_final = df_final.format(lambda x: formatar_valor(x, "pct"), 
+                                      subset=pd.IndexSlice[1:, df_exibicao.columns[col_idx]])
+
+        # Aplica R$ na coluna de valores (Coluna 4 / Índice 3) a partir da linha 2
+        if len(df_exibicao.columns) > 3:
+            df_final = df_final.format(lambda x: formatar_valor(x, "val"), 
+                                      subset=pd.IndexSlice[1:, df_exibicao.columns[3]])
+
         st.dataframe(df_final, use_container_width=True, hide_index=True)
 
     except Exception as e: st.error(f"Erro no DRE: {e}")
