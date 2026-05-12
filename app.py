@@ -9,19 +9,6 @@ st.set_page_config(page_title="Curva de Maturação & Expansão", layout="wide")
 st.title("Projeção de Maturação e Análise de Performance")
 st.markdown("---")
 
-# Funções Utilitárias de Limpeza
-def clean_numeric(val):
-    """Converte valores variados (strings com vírgula, R$, etc) em float."""
-    if pd.isna(val) or val == "" or val == "-":
-        return 0.0
-    if isinstance(val, (int, float)):
-        return float(val)
-    try:
-        s = str(val).replace('R$', '').replace('.', '').replace(',', '.').strip()
-        return float(s)
-    except:
-        return 0.0
-
 # 2. ENTRADA DE DADOS DE PROJEÇÃO
 st.sidebar.header("1. Dados de Projeção")
 arquivo_subido = st.sidebar.file_uploader(
@@ -187,7 +174,7 @@ if arquivo_historico is not None:
         st.error(f"Erro no processamento do histórico: {e}")
 
 
-# --- SEÇÃO: ANÁLISE DE LOJAS NEGATIVAS ---
+# --- NOVA SEÇÃO: ANÁLISE DE LOJAS NEGATIVAS (EXPANSÃO) ---
 st.markdown("---")
 st.header("Análise de Lojas com Resultado Negativo (Expansão)")
 
@@ -201,17 +188,16 @@ arquivo_negativas = st.sidebar.file_uploader(
 
 if arquivo_negativas is not None:
     try:
+        # Carregamento tratando vírgulas como decimais para o arquivo de expansão
         if "csv" in arquivo_negativas.name.lower():
             df_neg = pd.read_csv(arquivo_negativas, decimal=',', engine='python')
         else:
             df_neg = pd.read_excel(arquivo_negativas)
 
-        # Limpeza e conversão forçada para numérico para evitar erros de gradiente
+        # Limpeza básica: remove linhas onde o Código da Unidade ou Resultado Acumulado são nulos
         df_neg = df_neg.dropna(subset=['Cod Unidade', 'RO Acum'])
-        df_neg['RO Acum'] = df_neg['RO Acum'].apply(clean_numeric)
-        df_neg['%Aluguel Mês'] = df_neg['%Aluguel Mês'].apply(clean_numeric)
-        df_neg['%RO Mês'] = df_neg['%RO Mês'].apply(clean_numeric)
 
+        # Métricas Consolidadas
         total_prejuizo_acum = df_neg['RO Acum'].sum()
         media_aluguel_perc = df_neg['%Aluguel Mês'].mean() * 100
         total_lojas = len(df_neg)
@@ -222,26 +208,51 @@ if arquivo_negativas is not None:
         c3.metric("Peso Médio Aluguel", f"{media_aluguel_perc:.2f}%")
 
         st.subheader("Diagnóstico de Ofensores e Padrões")
+        
         t1, t2, t3 = st.tabs(["🔥 Top Ofensores", "🏠 Custo de Ocupação", "🏢 Perfil de Loja"])
 
         with t1:
+            # Pareto de Prejuízo
             df_neg_sorted = df_neg.sort_values(by='RO Acum', ascending=True).head(12)
             fig_ofensores = px.bar(df_neg_sorted, x='Desc_CC', y='RO Acum', 
                                   title="Unidades com Maior Prejuízo Acumulado",
-                                  color='RO Acum', color_continuous_scale='Reds_r')
+                                  color='RO Acum', color_continuous_scale='Reds_r',
+                                  labels={'RO Acum': 'Resultado Acum.', 'Desc_CC': 'Loja'})
             st.plotly_chart(fig_ofensores, use_container_width=True)
 
         with t2:
-            fig_corr = px.scatter(df_neg, x='%Aluguel Mês', y='%RO Mês', size='Aluguel Mês', 
-                                 hover_name='Desc_CC', color='Diretor', title="Peso do Aluguel vs Margem Operacional (%)")
+            # Correlação Aluguel vs Margem
+            fig_corr = px.scatter(df_neg, x='%Aluguel Mês', y='%RO Mês', 
+                                 size='Aluguel Mês', hover_name='Desc_CC', color='Diretor',
+                                 title="Peso do Aluguel vs Margem Operacional (%)",
+                                 trendline="ols")
             st.plotly_chart(fig_corr, use_container_width=True)
+            st.info("💡 Lojas no quadrante inferior direito indicam aluguel alto consumindo a pouca margem gerada.")
 
         with t3:
+            # Análise por Posição de Loja (Esquina vs Meio)
             df_pos = df_neg.groupby('Posição Loja')['RO Acum'].mean().reset_index()
-            fig_pos = px.pie(df_pos, values=df_pos['RO Acum'].abs(), names='Posição Loja', title="Prejuízo Médio por Posição")
+            fig_pos = px.pie(df_pos, values=df_pos['RO Acum'].abs(), names='Posição Loja', 
+                            title="Impacto Médio no Prejuízo por Posição de Imóvel",
+                            color_discrete_sequence=px.colors.qualitative.Pastel)
             st.plotly_chart(fig_pos, use_container_width=True)
 
-        # Uso seguro de gradiente (somente colunas garantidas como numéricas)
+        # Painel de Alertas Automáticos
+        st.markdown("#### 🔍 Insights de Negócios")
+        col_ins1, col_ins2 = st.columns(2)
+        
+        with col_ins1:
+            # Lojas com aluguel crítico
+            criticas = df_neg[df_neg['%Aluguel Mês'] > 0.10]['Desc_CC'].unique()
+            st.error(f"**Aluguel Crítico (>10% da Venda):** {len(criticas)} lojas.")
+            if len(criticas) > 0:
+                st.caption(", ".join(criticas))
+        
+        with col_ins2:
+            # Analise de Diretores
+            pior_diretoria = df_neg.groupby('Diretor')['RO Acum'].sum().idxmin()
+            st.warning(f"**Diretoria com Maior Déficit:** {pior_diretoria}")
+
         st.dataframe(df_neg.style.background_gradient(subset=['RO Acum'], cmap='Reds_r'), use_container_width=True)
 
     except Exception as e:
@@ -265,9 +276,14 @@ if arquivo_dre is not None:
         df_dre_raw = pd.read_excel(arquivo_dre, header=None)
         
         termos = {
-            "RB": "Receita Bruta", "RL": "Receita Líquida", "MC": "Margem de Contribuição",
-            "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque",
-            "FOLHA": "Despesas Folha", "ADM": "Despesas ADM", "OPER": "Despesas Operação",
+            "RB": "Receita Bruta",
+            "RL": "Receita Líquida",
+            "MC": "Margem de Contribuição",
+            "PVL": "Perdas Vencidos Liquido",
+            "DISC": "Discrepância _ Estoque",
+            "FOLHA": "Despesas Folha",
+            "ADM": "Despesas ADM",
+            "OPER": "Despesas Operação",
             "RES": "Resultado Operacional"
         }
 
@@ -280,40 +296,114 @@ if arquivo_dre is not None:
         def pegar_v(chave):
             if chave in indices:
                 val = df_dre_raw.iloc[indices[chave], 3] 
-                return clean_numeric(val)
+                return pd.to_numeric(val, errors='coerce') if pd.notnull(val) else 0.0
             return 0.0
 
         vals = {k: pegar_v(k) for k in termos.keys()}
         receita_base = vals['RL'] if vals['RL'] > 0 else vals['RB']
 
-        # Métricas de topo
-        c1, c2, c3, c4 = st.columns(4)
+        match_cmv = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains("CMV", case=False, na=False)]
+        cmv_total = 0.0
+        if not match_cmv.empty:
+            val_cmv = df_dre_raw.iloc[match_cmv.index[0], 3]
+            cmv_total = pd.to_numeric(val_cmv, errors='coerce') if pd.notnull(val_cmv) else 0.0
+
+        c1, c2, c3, c4, c5 = st.columns(5) 
         c1.metric("Receita Líquida", f"R$ {vals['RL']:,.2f}")
-        c2.metric("Margem Contrib.", f"R$ {vals['MC']:,.2f}")
-        c3.metric("Resultado Oper.", f"R$ {vals['RES']:,.2f}", delta_color="normal" if vals['RES']>=0 else "inverse")
-        c4.metric("Perdas Totais", f"R$ {abs(vals['PVL'])+abs(vals['DISC']):,.2f}")
+        c2.metric("Margem de Contribuição", f"R$ {vals['MC']:,.2f}")
+        
+        res_cor = "normal" if vals['RES'] >= 0 else "inverse"
+        c3.metric("Resultado Operacional", f"R$ {vals['RES']:,.2f}", delta_color=res_cor)
+        
+        perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
+        c4.metric("Perdas e Discrepâncias", f"R$ {perdas_totais:,.2f}")
+
+        perc_cmv = (abs(cmv_total) / receita_base * 100) if receita_base > 0 else 0
+        cor_cmv = "inverse" if perc_cmv > 65 else "normal"
+        c5.metric("CMV", f"R$ {cmv_total:,.2f}", delta=f"{perc_cmv:.2f}%", delta_color=cor_cmv)
+
+        perc_folha = (abs(vals['FOLHA']) / receita_base * 100) if receita_base > 0 else 0
+        perc_adm = (abs(vals['ADM']) / receita_base * 100) if receita_base > 0 else 0
+        perc_oper = (abs(vals['OPER']) / receita_base * 100) if receita_base > 0 else 0
+        perc_perda = (perdas_totais / receita_base * 100) if receita_base > 0 else 0
+        perc_margem = (vals['MC'] / receita_base * 100) if receita_base > 0 else 0
+
+        st.subheader("Análise de Performance Operacional")
+        col_diag, col_graf = st.columns([1, 1])
+        
+        with col_diag:
+            st.write("Alertas de Indicadores (Base: Receita Líquida):")
+            if vals['RES'] < 0:
+                st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
+            if perc_margem < 35:
+                st.warning(f"Margem Abaixo da Meta ({perc_margem:.2f}%): A meta é 35%.")
+            if perc_perda > 1.5:
+                st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): A meta é 0,66%.")
+
+        with col_graf:
+            df_gastos = pd.DataFrame({
+                "Conta": ["Folha", "ADM", "Operação", "Quebra/Perdas"],
+                "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
+            }).sort_values(by="Valor", ascending=False)
+            
+            fig_ofensores = px.pie(df_gastos, values='Valor', names='Conta', 
+                                   title="Composição de Gastos Operacionais",
+                                   color_discrete_sequence=px.colors.sequential.RdBu)
+            fig_ofensores.update_traces(textinfo='percent+label')
+            st.plotly_chart(fig_ofensores, use_container_width=True)
 
         st.markdown("---")
         st.subheader("Tabela de Dados Financeiros Detalhada")
         
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
-        
-        # Identificação dinâmica de colunas para evitar o erro de 'Index Out of Range'
-        col_indices = []
-        for i, col in enumerate(df_exibicao.columns):
-            header_sample = df_exibicao.iloc[0:5, i].astype(str).str.upper().to_list()
-            if any("REALIZADO" in s for s in header_sample):
-                col_indices.append(df_exibicao.columns[i])
+        df_exibicao.insert(0, 'Nº', range(1, len(df_exibicao) + 1))
 
-        # Estilização Segura
-        def formatador_decimal_safe(val):
+        colunas_avri = []
+        colunas_realizado = []
+        for col_idx in range(len(df_exibicao.columns)):
+            cabecalho_texto = df_exibicao.iloc[0:4, col_idx].astype(str).str.upper()
+            if cabecalho_texto.str.contains("AV-RI").any() or cabecalho_texto.str.contains("AV-RL").any():
+                colunas_avri.append(df_exibicao.columns[col_idx])
+            if cabecalho_texto.str.contains("REALIZADO").any():
+                colunas_realizado.append(df_exibicao.columns[col_idx])
+
+        def formatador_porcentagem(val):
+            if val == "" or val == "-" or val == " ": return val
             try:
-                num = clean_numeric(val)
+                num = float(str(val).replace(',', '.'))
+                return f"{num * 100:.2f}%".replace('.', ',')
+            except: return val
+
+        def formatador_decimal(val):
+            if val == "" or val == "-" or val == " ": return val
+            try:
+                num = float(str(val).replace(',', '.'))
                 return f"{num:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
             except: return val
 
-        # Aplicando apenas formatação básica sem gradientes complexos no DRE (causadores de erro em células mescladas)
-        st.dataframe(df_exibicao.astype(str), use_container_width=True)
+        contas_destaque = [
+            "Receita Bruta", "Deduções", "Receita Líquida", "CMV", 
+            "Perdas Vencidos Liquido", "Discrepância _ Estoque", 
+            "Margem de Contribuição", "Despesas Folha", "Despesas ADM", 
+            "Despesas Operação", "Resultado Operacional"
+        ]
+
+        def estilo_linhas_mestre(row):
+            texto_celula = str(row.iloc[2]).strip() 
+            if any(conta.lower() in texto_celula.lower() for conta in contas_destaque):
+                return ['background-color: #f0f7ff; font-weight: bold; border-bottom: 1.5px solid #d1dbe5;'] * len(row)
+            return [''] * len(row)
+
+        col_pct_alvo = list(set([3] + colunas_avri))
+        
+        df_estilizado = (
+            df_exibicao.style
+            .apply(estilo_linhas_mestre, axis=1)
+            .format(subset=col_pct_alvo, formatter=formatador_porcentagem)
+            .format(subset=colunas_realizado, formatter=formatador_decimal)
+        )
+
+        st.dataframe(df_estilizado, use_container_width=True, hide_index=True)
 
     except Exception as e:
-        st.error(f"Erro no DRE: {e}")
+        st.error(f"Erro no processamento do DRE: {e}")
