@@ -156,7 +156,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
-# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (COM AJUSTE DE MULTA E CMV)
+# 4. SEÇÃO: ANÁLISE DE NEGATIVAS
 st.markdown("---")
 st.header("Análise Avançada de Lojas Negativas (Expansão)")
 st.sidebar.markdown("---")
@@ -201,7 +201,6 @@ if arquivo_negativas is not None:
             st.subheader("📊 Top 15 Lojas com Maior Déficit (Análise RO vs Multa)")
             df_top15 = df_ana.sort_values(by=col_ro_acum).head(15).copy()
             
-            # Indicadores de CMV (Balões de destaque acima do gráfico)
             if col_cmv_neg:
                 st.markdown("**Indicador de CMV por Loja:**")
                 cols_baloes = st.columns(len(df_top15))
@@ -210,51 +209,47 @@ if arquivo_negativas is not None:
                     val_exibir = val_cmv if val_cmv > 1 else val_cmv * 100
                     cor_fundo = "#e8f5e9" if val_exibir <= 65 else "#fdecea"
                     cor_texto = "#28a745" if val_exibir <= 65 else "#dc3545"
-                    
                     cols_baloes[idx].markdown(
                         f"""<div style="background-color: {cor_fundo}; color: {cor_texto}; padding: 5px 2px; border-radius: 10px; 
                         text-align: center; font-size: 11px; font-weight: bold; border: 1px solid {cor_texto};">
                         CMV<br>{val_exibir:.1f}%</div>""", unsafe_allow_html=True
                     )
 
-            # Gráfico de barras com Multa em Negrito
             fig_top = px.bar(
-                df_top15, 
-                x=col_desc, 
-                y=col_ro_acum,
-                color=col_ro_acum,
-                color_continuous_scale='Reds_r',
-                text=col_multa if col_multa else None
+                df_top15, x=col_desc, y=col_ro_acum, color=col_ro_acum,
+                color_continuous_scale='Reds_r', text=col_multa if col_multa else None
             )
-            
             fig_top.update_traces(
                 texttemplate='<b>Multa: R$ %{text:,.2f}</b>' if col_multa else None, 
-                textposition='outside',
-                marker_line_color='rgb(8,48,107)',
-                marker_line_width=1.5,
-                opacity=0.9
+                textposition='outside', marker_line_width=1.5, opacity=0.9
             )
-            
-            fig_top.update_layout(
-                yaxis_title="RO Acumulado (R$)", 
-                xaxis_title=None, 
-                coloraxis_showscale=False,
-                margin=dict(t=30),
-                height=500,
-                template="plotly_white"
-            )
+            fig_top.update_layout(yaxis_title="RO Acumulado (R$)", xaxis_title=None, coloraxis_showscale=False, height=500, template="plotly_white")
             st.plotly_chart(fig_top, use_container_width=True)
 
     except Exception as e: st.error(f"Erro em Negativas: {e}")
 
-# 5. SEÇÃO: DRE E RENTABILIDADE
+# 5. SEÇÃO: DRE E RENTABILIDADE (AJUSTADA PARA MÚLTIPLOS ARQUIVOS)
 st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 st.sidebar.markdown("---")
 st.sidebar.header("4. Dados Financeiros (DRE)")
-arquivo_dre = st.sidebar.file_uploader("Upload da planilha de DRE:", type=["xlsx", "xls", "csv"], key="dre_file")
 
-if arquivo_dre is not None:
+# AJUSTE: Múltiplos arquivos habilitados
+arquivos_dre = st.sidebar.file_uploader(
+    "Upload das planilhas de DRE:", 
+    type=["xlsx", "xls", "csv"], 
+    key="dre_file",
+    accept_multiple_files=True
+)
+
+if arquivos_dre:
+    # Seletor para escolher qual arquivo da "pasta" analisar
+    nome_arquivos = [f.name for f in arquivos_dre]
+    arq_selecionado_nome = st.selectbox("Selecione o arquivo para análise detalhada:", nome_arquivos)
+    
+    # Recupera o objeto do arquivo selecionado
+    arquivo_dre = next(f for f in arquivos_dre if f.name == arq_selecionado_nome)
+
     try:
         df_dre_raw = pd.read_excel(arquivo_dre, header=None)
         termos = {
@@ -286,7 +281,7 @@ if arquivo_dre is not None:
         perc_cmv = (abs(vals['CMV']) / receita_base) * 100
         c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{perc_cmv:.1f}%")
 
-        st.subheader("Análise de Performance Operacional")
+        st.subheader(f"Análise de Performance Operacional: {arquivo_dre.name}")
         col_diag, col_graf = st.columns([1, 1])
         with col_diag:
             st.write("**Alertas de Indicadores:**")
@@ -321,14 +316,10 @@ if arquivo_dre is not None:
             return f"{num:.2f}%" if tipo == "pct" else f"R$ {num:,.2f}"
 
         df_final = df_exibicao.style.apply(estilo_linhas_mestre, axis=1)
-
         for col_idx in cols_percent:
-            df_final = df_final.format(lambda x: formatar_valor(x, "pct"), 
-                                      subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
-
+            df_final = df_final.format(lambda x: formatar_valor(x, "pct"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
         for col_idx in cols_valor:
-            df_final = df_final.format(lambda x: formatar_valor(x, "val"), 
-                                      subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+            df_final = df_final.format(lambda x: formatar_valor(x, "val"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
 
         st.dataframe(df_final, use_container_width=True, hide_index=True)
 
