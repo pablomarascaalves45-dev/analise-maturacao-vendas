@@ -209,7 +209,7 @@ if arquivo_dre is not None:
             "RB": "Receita Bruta", "RL": "Receita Líquida", "MC": "Margem de Contribuição",
             "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque",
             "FOLHA": "Despesas Folha", "ADM": "Despesas ADM", "OPER": "Despesas Operação",
-            "RES": "Resultado Operacional", "CMV": "CMV"
+            "RES": "Resultado Operacional", "CMV": "CMV", "MULTA": "Multa Rescisória"
         }
         indices = {}
         for chave, texto in termos.items():
@@ -234,24 +234,45 @@ if arquivo_dre is not None:
         perc_cmv = (abs(vals['CMV']) / receita_base) * 100
         c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{perc_cmv:.1f}%")
 
-        st.subheader("Análise de Performance Operacional")
-        col_diag, col_graf = st.columns([1, 1])
+        st.subheader("📊 Performance Operacional e Custos")
+        col_diag, col_graf = st.columns([1, 1.2])
+        
         with col_diag:
-            st.write("**Alertas de Indicadores:**")
+            st.markdown("### Indicadores Chave")
+            # Cards destacados para CMV e Multa
+            inner_c1, inner_c2 = st.columns(2)
+            with inner_c1:
+                st.info(f"**CMV Total**\nR$ {abs(vals['CMV']):,.2f}")
+            with inner_c2:
+                st.warning(f"**Multa Rescisória**\nR$ {vals['MULTA']:,.2f}")
+            
+            st.markdown("---")
+            st.write("**Alertas de Gestão:**")
             perc_margem = (vals['MC'] / receita_base) * 100
             perc_perda = (perdas_totais / receita_base) * 100
-            if vals['RES'] < 0: st.error(f"🔴 Déficit operacional de R$ {abs(vals['RES']):,.2f}")
-            if perc_margem < 35: st.warning(f"⚠️ Margem Baixa: {perc_margem:.2f}% (Meta: 35%)")
-            if perc_perda > 1.5: st.warning(f"⚠️ Quebra Elevada: {perc_perda:.2f}% (Meta: 0,66%)")
+            if vals['RES'] < 0: st.error(f"🔴 Déficit operacional: R$ {abs(vals['RES']):,.2f}")
+            if perc_margem < 35: st.warning(f"⚠️ Margem Baixa: {perc_margem:.2f}%")
+            if perc_perda > 1.5: st.warning(f"⚠️ Quebra Elevada: {perc_perda:.2f}%")
 
         with col_graf:
             df_gastos = pd.DataFrame({
-                "Conta": ["Folha", "ADM", "Operação", "Quebra"],
-                "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
+                "Conta": ["Folha", "ADM", "Operação", "Quebras", "CMV"],
+                "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais, abs(vals['CMV'])]
             })
-            st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Composição de Gastos"), use_container_width=True)
+            # Gráfico de Rosca (Donut) mais moderno
+            fig_donut = px.pie(
+                df_gastos, 
+                values='Valor', 
+                names='Conta', 
+                hole=0.5,
+                color_discrete_sequence=px.colors.qualitative.Pastel,
+                title="Distribuição de Custos e CMV"
+            )
+            fig_donut.update_traces(textposition='inside', textinfo='percent+label')
+            fig_donut.update_layout(showlegend=True, margin=dict(t=30, b=0, l=0, r=0))
+            st.plotly_chart(fig_donut, use_container_width=True)
 
-        # TABELA DETALHADA COM AJUSTE DE INDEXAÇÃO SOLICITADO
+        # TABELA DETALHADA
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
         
@@ -279,7 +300,6 @@ if arquivo_dre is not None:
             df_final = df_final.format(lambda x: formatar_valor(x, "val"), 
                                       subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
 
-        # AJUSTE PONTUAL: use_container_width=True e hide_index para permitir ajuste ao texto
         st.dataframe(df_final, use_container_width=True, hide_index=True)
 
     except Exception as e: st.error(f"Erro no DRE: {e}")
