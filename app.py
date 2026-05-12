@@ -156,7 +156,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
-# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (EXPANSÃO)
+# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (COM AJUSTE DE MULTA E CMV)
 st.markdown("---")
 st.header("Análise Avançada de Lojas Negativas (Expansão)")
 st.sidebar.markdown("---")
@@ -167,15 +167,22 @@ if arquivo_negativas is not None:
     try:
         df_neg = pd.read_csv(arquivo_negativas, engine='python') if "csv" in arquivo_negativas.name.lower() else pd.read_excel(arquivo_negativas)
         df_neg.columns = [str(c).strip() for c in df_neg.columns]
+        
         col_ro_acum = next((c for c in df_neg.columns if 'RO Acum' in c), None)
         col_desc = next((c for c in df_neg.columns if 'Desc_CC' in c), None)
         col_posicao = next((c for c in df_neg.columns if 'Posição Loja' in c), None)
         col_vagas = next((c for c in df_neg.columns if 'Vagas' in c), None)
         col_mercado = next((c for c in df_neg.columns if 'Próximo a mercado' in c), None)
+        col_multa = next((c for c in df_neg.columns if 'Multa rescisória atual' in c), None)
+        col_cmv_neg = next((c for c in df_neg.columns if 'CMV' in c and 'Acum' in c), None)
 
         if col_ro_acum and col_desc:
             df_neg[col_ro_acum] = df_neg[col_ro_acum].apply(clean_numeric)
             df_ana = df_neg[df_neg[col_desc].notna()].copy()
+            
+            if col_multa: df_ana[col_multa] = df_ana[col_multa].apply(clean_numeric)
+            if col_cmv_neg: df_ana[col_cmv_neg] = df_ana[col_cmv_neg].apply(clean_numeric)
+
             st.subheader("🔍 Diagnóstico de Padrões")
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -189,10 +196,55 @@ if arquivo_negativas is not None:
             with c3:
                 if col_mercado:
                     per_mer = df_ana.groupby(col_mercado)[col_ro_acum].mean().sort_values()
-                    st.plotly_chart(px.pie(names=per_mer.index, values=abs(per_mer.values), title="Prejuízo Próximo a Mercado?"), use_container_width=True)
+                    st.plotly_chart(px.pie(names=per_mer.index, values=abs(per_mer.values), title="Prejuízo Próximo a Mercado?", hole=0.4), use_container_width=True)
             
-            st.subheader("📊 Top 15 Lojas com Maior Déficit")
-            st.plotly_chart(px.bar(df_ana.sort_values(by=col_ro_acum).head(15), x=col_desc, y=col_ro_acum, color_continuous_scale='Reds_r'), use_container_width=True)
+            st.subheader("📊 Top 15 Lojas com Maior Déficit (Análise RO vs Multa)")
+            df_top15 = df_ana.sort_values(by=col_ro_acum).head(15).copy()
+            
+            # Indicadores de CMV (Balões de destaque acima do gráfico)
+            if col_cmv_neg:
+                st.markdown("**Indicador de CMV por Loja:**")
+                cols_baloes = st.columns(len(df_top15))
+                for idx, (_, row) in enumerate(df_top15.iterrows()):
+                    val_cmv = row[col_cmv_neg]
+                    val_exibir = val_cmv if val_cmv > 1 else val_cmv * 100
+                    cor_fundo = "#e8f5e9" if val_exibir <= 65 else "#fdecea"
+                    cor_texto = "#28a745" if val_exibir <= 65 else "#dc3545"
+                    
+                    cols_baloes[idx].markdown(
+                        f"""<div style="background-color: {cor_fundo}; color: {cor_texto}; padding: 5px 2px; border-radius: 10px; 
+                        text-align: center; font-size: 11px; font-weight: bold; border: 1px solid {cor_texto};">
+                        CMV<br>{val_exibir:.1f}%</div>""", unsafe_allow_html=True
+                    )
+
+            # Gráfico de barras com Multa em Negrito
+            fig_top = px.bar(
+                df_top15, 
+                x=col_desc, 
+                y=col_ro_acum,
+                color=col_ro_acum,
+                color_continuous_scale='Reds_r',
+                text=col_multa if col_multa else None
+            )
+            
+            fig_top.update_traces(
+                texttemplate='<b>Multa: R$ %{text:,.2f}</b>' if col_multa else None, 
+                textposition='outside',
+                marker_line_color='rgb(8,48,107)',
+                marker_line_width=1.5,
+                opacity=0.9
+            )
+            
+            fig_top.update_layout(
+                yaxis_title="RO Acumulado (R$)", 
+                xaxis_title=None, 
+                coloraxis_showscale=False,
+                margin=dict(t=30),
+                height=500,
+                template="plotly_white"
+            )
+            st.plotly_chart(fig_top, use_container_width=True)
+
     except Exception as e: st.error(f"Erro em Negativas: {e}")
 
 # 5. SEÇÃO: DRE E RENTABILIDADE
@@ -251,7 +303,6 @@ if arquivo_dre is not None:
             })
             st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Composição de Gastos"), use_container_width=True)
 
-        # TABELA DETALHADA COM AJUSTE DE INDEXAÇÃO SOLICITADO
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
         
@@ -279,7 +330,6 @@ if arquivo_dre is not None:
             df_final = df_final.format(lambda x: formatar_valor(x, "val"), 
                                       subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
 
-        # AJUSTE PONTUAL: use_container_width=True e hide_index para permitir ajuste ao texto
         st.dataframe(df_final, use_container_width=True, hide_index=True)
 
     except Exception as e: st.error(f"Erro no DRE: {e}")
