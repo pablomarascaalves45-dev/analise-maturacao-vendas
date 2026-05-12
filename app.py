@@ -156,7 +156,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
-# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (AJUSTE SOLICITADO: CMV ABAIXO DA MULTA)
+# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (COM AJUSTE VISUAL DO GRÁFICO E REMOÇÃO DE LEGENDA HTML)
 st.markdown("---")
 st.header("Análise Avançada de Lojas Negativas (Expansão)")
 st.sidebar.markdown("---")
@@ -168,6 +168,7 @@ if arquivo_negativas is not None:
         df_neg = pd.read_csv(arquivo_negativas, engine='python') if "csv" in arquivo_negativas.name.lower() else pd.read_excel(arquivo_negativas)
         df_neg.columns = [str(c).strip() for c in df_neg.columns]
         
+        # Identificação de colunas
         col_ro_acum = next((c for c in df_neg.columns if 'RO Acum' in c), None)
         col_desc = next((c for c in df_neg.columns if 'Desc_CC' in c), None)
         col_posicao = next((c for c in df_neg.columns if 'Posição Loja' in c), None)
@@ -197,68 +198,65 @@ if arquivo_negativas is not None:
                     per_mer = df_ana.groupby(col_mercado)[col_ro_acum].mean().sort_values()
                     st.plotly_chart(px.pie(names=per_mer.index, values=abs(per_mer.values), title="Prejuízo Próximo a Mercado?", hole=0.4), use_container_width=True)
             
+            # --- SEÇÃO TOP 15 COM AJUSTE VISUAL ---
             st.subheader("📊 Top 15 Lojas com Maior Déficit (Análise RO vs Multa)")
             df_top15 = df_ana.sort_values(by=col_ro_acum).head(15).copy()
-
-            # --- LEGENDA DO CMV ---
-            st.markdown("""
-                <div style="display: flex; gap: 20px; margin-bottom: 15px; font-size: 14px; font-weight: bold;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="width: 15px; height: 15px; background-color: #28a745; border-radius: 4px;"></div>
-                        <span style="color: #28a745;">CMV Dentro da Meta (≤ 65%)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="width: 15px; height: 15px; background-color: #dc3545; border-radius: 4px;"></div>
-                        <span style="color: #dc3545;">CMV Acima da Meta (> 65%)</span>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-
-            # --- CRIAÇÃO DO TEXTO CUSTOMIZADO (MULTA + CMV) ---
-            # Geramos uma nova coluna que combina Multa e CMV para exibir no gráfico
-            def format_label(row):
-                m = f"Multa: R$ {row[col_multa]:,.2f}" if col_multa else ""
-                if col_cmv_neg:
-                    v = row[col_cmv_neg]
-                    v_perc = v if v > 1 else v * 100
-                    c = "↑" if v_perc > 65 else "↓"
-                    # Adiciona quebra de linha <br> para o CMV ficar abaixo da Multa
-                    return f"{m}<br>CMV: {c} {v_perc:.1f}%"
-                return m
-
-            df_top15['label_grafico'] = df_top15.apply(format_label, axis=1)
-
-            # --- GRÁFICO COM TEXTO PERSONALIZADO ---
+            
+            # Criação da etiqueta de texto customizada (Multa acima da barra, CMV no hover)
+            # Como solicitado, removemos os balões HTML e a legenda HTML. 
+            # O CMV vai apenas para o hover.
+            
             fig_top = px.bar(
                 df_top15, 
                 x=col_desc, 
                 y=col_ro_acum,
                 color=col_ro_acum,
+                # Esquema de cores mais "premium" (Reds_r invertido para destacar o déficit)
                 color_continuous_scale='Reds_r',
-                text='label_grafico' # Usamos a nova coluna aqui
+                # Texto direto sobre a barra (Multa Rescisória)
+                text=col_multa if col_multa else None, 
+                title="Ranking de Prejuízo Acumulado",
+                # Configuração para colocar o CMV no hover de forma limpa
+                hover_data={col_cmv_neg: ':.1f%'} if col_cmv_neg else None,
+                labels={col_desc: 'Unidade CC', col_ro_acum: 'RO Acumulado (R$)'}
             )
             
             fig_top.update_traces(
+                # Formata a Multa no texto acima da barra
+                texttemplate='Multa: R$ %{text:,.2f}' if col_multa else None, 
                 textposition='outside',
+                # Define cor forte para as barras para visual mais premium
                 marker_line_color='rgb(8,48,107)',
                 marker_line_width=1.5,
                 opacity=0.9,
                 textfont=dict(size=11, color="black", family="Arial Black")
             )
             
+            # Ajuste de layout para melhoria visual geral
             fig_top.update_layout(
                 yaxis_title="RO Acumulado (R$)", 
                 xaxis_title=None, 
                 coloraxis_showscale=False,
-                margin=dict(t=40, b=0), # Aumentado margem superior para caber o texto
+                margin=dict(t=20, b=0),
                 height=600,
-                template="plotly_white"
+                # Fonte premium e fundo branco puro
+                font_family="Arial, sans-serif",
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                xaxis={'tickangle': -45} # Inclina os nomes das lojas para visual mais limpo
             )
+            
+            # Adiciona linhas de grade sutis
+            fig_top.update_yaxes(gridcolor='rgba(230,230,230,0.5)', zerolinecolor='rgb(50,50,50)')
+
             st.plotly_chart(fig_top, use_container_width=True)
+            
+            # Dica de interpretação movida para o texto
+            st.info("💡 **Dica:** Os valores acima das barras indicam a **Multa Rescisória**. Passe o mouse sobre as barras para ver o **CMV Acumulado**.")
 
     except Exception as e: st.error(f"Erro em Negativas: {e}")
 
-# 5. SEÇÃO: DRE E RENTABILIDADE (INALTERADO)
+# 5. SEÇÃO: DRE E RENTABILIDADE
 st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 st.sidebar.markdown("---")
