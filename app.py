@@ -156,7 +156,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
-# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (COM BALÕES CMV)
+# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (FOCO NO AJUSTE DO GRÁFICO TOP 15)
 st.markdown("---")
 st.header("Análise Avançada de Lojas Negativas (Expansão)")
 st.sidebar.markdown("---")
@@ -200,9 +200,9 @@ if arquivo_negativas is not None:
             st.subheader("📊 Top 15 Lojas com Maior Déficit (Análise RO vs Multa)")
             df_top15 = df_ana.sort_values(by=col_ro_acum).head(15).copy()
             
-            # LEGENDA DO CMV
+            # --- LEGENDA DO CMV ---
             st.markdown("""
-                <div style="display: flex; gap: 20px; margin-bottom: 10px; font-size: 14px; font-weight: bold;">
+                <div style="display: flex; gap: 20px; margin-bottom: 15px; font-size: 14px; font-weight: bold;">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <div style="width: 15px; height: 15px; background-color: #e8f5e9; border: 1px solid #28a745; border-radius: 4px;"></div>
                         <span style="color: #28a745;">CMV Dentro da Meta (≤ 65%)</span>
@@ -214,12 +214,15 @@ if arquivo_negativas is not None:
                 </div>
             """, unsafe_allow_html=True)
 
-            # BALÕES COM VALORES APARENTES ACIMA DO GRÁFICO
+            # --- BALÕES DE CMV ACIMA DO GRÁFICO ---
             if col_cmv_neg:
                 cols_baloes = st.columns(len(df_top15))
                 for idx, (_, row) in enumerate(df_top15.iterrows()):
                     val_cmv = row[col_cmv_neg]
+                    # Garante que o valor apareça como percentual (ex: 68.2%)
                     val_exibir = val_cmv if val_cmv > 1 else val_cmv * 100
+                    
+                    # Estilo condicional: verde (meta) ou vermelho (fora da meta)
                     cor_fundo = "#e8f5e9" if val_exibir <= 65 else "#fdecea"
                     cor_texto = "#28a745" if val_exibir <= 65 else "#dc3545"
                     icone = "↑" if val_exibir > 65 else "↓"
@@ -229,23 +232,24 @@ if arquivo_negativas is not None:
                         <div style="
                             background-color: {cor_fundo}; 
                             color: {cor_texto}; 
-                            padding: 5px 2px; 
-                            border-radius: 15px; 
+                            padding: 6px 2px; 
+                            border-radius: 12px; 
                             text-align: center; 
-                            font-size: 12px; 
+                            font-size: 13px; 
                             font-weight: 800; 
                             border: 1px solid {cor_texto};
                             box-shadow: 0px 2px 4px rgba(0,0,0,0.1);
                             display: flex;
                             align-items: center;
                             justify-content: center;
-                            min-height: 35px;
+                            min-height: 40px;
                         ">
                             {icone} {val_exibir:.1f}%
                         </div>
                         """, unsafe_allow_html=True
                     )
 
+            # --- GRÁFICO DE BARRAS TOP 15 ---
             fig_top = px.bar(
                 df_top15, 
                 x=col_desc, 
