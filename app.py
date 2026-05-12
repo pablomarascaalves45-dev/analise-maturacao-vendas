@@ -261,8 +261,10 @@ if arquivo_dre is not None:
                 return ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
             return [''] * len(row)
 
-        # Ajuste de Índices: Começar na Coluna 2 (índice 1) e pular a Coluna 4 (índice 3)
-        cols_percent = [i for i in range(1, 33, 2) if i < len(df_exibicao.columns) and i != 3]
+        # AJUSTE SOLICITADO:
+        # Começa na Coluna de índice 2 (3ª coluna) e pula de 2 em 2
+        # Pula o índice 3 (Coluna 4) pois esta será em R$
+        cols_percent = [i for i in range(2, 33, 2) if i < len(df_exibicao.columns) and i != 3]
         
         def formatar_valor(val, tipo):
             num = clean_numeric(val)
@@ -271,12 +273,12 @@ if arquivo_dre is not None:
 
         df_final = df_exibicao.style.apply(estilo_linhas_mestre, axis=1)
 
-        # Formatação de Porcentagem (Colunas 2, 6, 8...) a partir da Linha 3 (índice 2)
+        # Formatação de Porcentagem baseada na regra de pular 2 em 2 a partir do índice 2
         for col_idx in cols_percent:
             df_final = df_final.format(lambda x: formatar_valor(x, "pct"), 
                                       subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
 
-        # Formatação em Real (R$) especificamente para a Coluna 4 (índice 3) a partir da Linha 3
+        # Formatação em Real (R$) para o índice 3 (Coluna 4)
         if len(df_exibicao.columns) > 3:
             df_final = df_final.format(lambda x: formatar_valor(x, "val"), 
                                       subset=pd.IndexSlice[2:, df_exibicao.columns[3]])
