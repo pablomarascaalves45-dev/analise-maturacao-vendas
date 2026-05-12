@@ -261,11 +261,7 @@ if arquivo_dre is not None:
                 return ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
             return [''] * len(row)
 
-        # LÓGICA DE COLUNAS (Índice 0 é a primeira coluna)
-        # Colunas de Moeda (R$): Começa na 3, 5 e pula de 2 em 2 (7, 9...)
         cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
-        
-        # Colunas de Porcentagem (%): Índices pares a partir de 2 (2, 4, 6...)
         cols_percent = [i for i in range(2, len(df_exibicao.columns), 2) if i not in cols_valor]
         
         def formatar_valor(val, tipo):
@@ -275,16 +271,15 @@ if arquivo_dre is not None:
 
         df_final = df_exibicao.style.apply(estilo_linhas_mestre, axis=1)
 
-        # Formatação de % (Índices pares: 2, 4, 6...)
         for col_idx in cols_percent:
             df_final = df_final.format(lambda x: formatar_valor(x, "pct"), 
                                       subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
 
-        # Formatação de R$ (Índices ímpares: 3, 5, 7...)
         for col_idx in cols_valor:
             df_final = df_final.format(lambda x: formatar_valor(x, "val"), 
                                       subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
 
+        # AJUSTE PONTUAL: use_container_width=True e hide_index para permitir ajuste ao texto
         st.dataframe(df_final, use_container_width=True, hide_index=True)
 
     except Exception as e: st.error(f"Erro no DRE: {e}")
