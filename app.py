@@ -293,16 +293,30 @@ if arquivo_dre is not None:
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
         
-        # --- AJUSTE: ESTILO DE LINHAS E REALCE POSITIVO (IGNORANDO META) ---
+        # --- Lógica de Contagem de Meses Positivos e Meta ---
+        meses_positivos = 0
+        venda_necessaria_idx29 = 0.0
+        ponto_equilibrio_idx30 = 0.0
+        
+        if "RES" in indices:
+            row_res = df_dre_raw.iloc[indices["RES"]]
+            # Contar a partir da coluna 3 (pula Meta e descrição)
+            for i in range(3, len(row_res)):
+                if clean_numeric(row_res[i]) > 0:
+                    meses_positivos += 1
+            
+            # Pegar valores das colunas 29 e 30 se existirem
+            if len(row_res) > 30:
+                venda_necessaria_idx29 = clean_numeric(row_res[29])
+                ponto_equilibrio_idx30 = clean_numeric(row_res[30])
+
+        # --- ESTILO DE LINHAS E REALCE ---
         def estilo_com_realce(row):
             styles = [''] * len(row)
             texto = str(row.iloc[1]).upper()
-            
-            # 1. Estilo Mestre para linhas principais
             if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
                 styles = ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
             
-            # 2. Realce Verde para Meses Positivos (Começa no índice 3 para pular a coluna 2 - Meta)
             if "RESULTADO OPERACIONAL" in texto:
                 for i in range(3, len(row)):
                     val = clean_numeric(row.iloc[i])
@@ -318,14 +332,29 @@ if arquivo_dre is not None:
             if num == 0 and (val == "" or val == "-"): return val
             return f"{num:.2f}%" if tipo == "pct" else f"R$ {num:,.2f}"
 
-        # Aplicação dos estilos e formatos
         df_final = df_exibicao.style.apply(estilo_com_realce, axis=1)
-
         for col_idx in cols_percent:
             df_final = df_final.format(lambda x: formatar_valor(x, "pct"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
         for col_idx in cols_valor:
             df_final = df_final.format(lambda x: formatar_valor(x, "val"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
 
         st.dataframe(df_final, use_container_width=True, hide_index=True)
+
+        # --- RELATÓRIO DE PERFORMANCE ABAIXO DA TABELA ---
+        st.markdown("### 📋 Relatório de Diagnóstico Financeiro")
+        r1, r2, r3 = st.columns(3)
+        with r1:
+            st.info(f"**Meses no Azul:** {meses_positivos} meses")
+        with r2:
+            st.success(f"**Venda Necessária (Média):** R$ {venda_necessaria_idx29:,.2f}")
+        with r3:
+            st.warning(f"**Ponto de Equilíbrio:** R$ {ponto_equilibrio_idx30:,.2f}")
+            
+        if meses_positivos >= 6:
+            st.write("✅ **Análise:** A unidade apresenta consistência operacional positiva no semestre.")
+        elif meses_positivos > 0:
+            st.write("⚠️ **Análise:** Operação oscilante. Requer atenção ao Ponto de Equilíbrio para estabilização.")
+        else:
+            st.write("🚨 **Análise:** Unidade em déficit crítico. Faturamento atual abaixo da Venda Necessária.")
 
     except Exception as e: st.error(f"Erro no DRE: {e}")
