@@ -156,7 +156,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
-# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (EXPANSÃO)
+# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (COM BALÕES CMV)
 st.markdown("---")
 st.header("Análise Avançada de Lojas Negativas (Expansão)")
 st.sidebar.markdown("---")
@@ -168,14 +168,12 @@ if arquivo_negativas is not None:
         df_neg = pd.read_csv(arquivo_negativas, engine='python') if "csv" in arquivo_negativas.name.lower() else pd.read_excel(arquivo_negativas)
         df_neg.columns = [str(c).strip() for c in df_neg.columns]
         
-        # Identificação de colunas
         col_ro_acum = next((c for c in df_neg.columns if 'RO Acum' in c), None)
         col_desc = next((c for c in df_neg.columns if 'Desc_CC' in c), None)
         col_posicao = next((c for c in df_neg.columns if 'Posição Loja' in c), None)
         col_vagas = next((c for c in df_neg.columns if 'Vagas' in c), None)
         col_mercado = next((c for c in df_neg.columns if 'Próximo a mercado' in c), None)
         col_multa = next((c for c in df_neg.columns if 'Multa rescisória atual' in c), None)
-        # Tenta achar CMV Acumulado na planilha de negativas
         col_cmv_neg = next((c for c in df_neg.columns if 'CMV' in c and 'Acum' in c), None)
 
         if col_ro_acum and col_desc:
@@ -199,41 +197,51 @@ if arquivo_negativas is not None:
                     per_mer = df_ana.groupby(col_mercado)[col_ro_acum].mean().sort_values()
                     st.plotly_chart(px.pie(names=per_mer.index, values=abs(per_mer.values), title="Prejuízo Próximo a Mercado?", hole=0.4), use_container_width=True)
             
-            # --- SEÇÃO TOP 15 COM BALÕES DE CMV ---
             st.subheader("📊 Top 15 Lojas com Maior Déficit (Análise RO vs Multa)")
             df_top15 = df_ana.sort_values(by=col_ro_acum).head(15).copy()
             
-            # Renderização dos "Balões" de CMV acima do gráfico
+            # LEGENDA DO CMV
+            st.markdown("""
+                <div style="display: flex; gap: 20px; margin-bottom: 10px; font-size: 14px; font-weight: bold;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 15px; height: 15px; background-color: #e8f5e9; border: 1px solid #28a745; border-radius: 4px;"></div>
+                        <span style="color: #28a745;">CMV Dentro da Meta (≤ 65%)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 15px; height: 15px; background-color: #fdecea; border: 1px solid #dc3545; border-radius: 4px;"></div>
+                        <span style="color: #dc3545;">CMV Acima da Meta (> 65%)</span>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # BALÕES COM VALORES APARENTES ACIMA DO GRÁFICO
             if col_cmv_neg:
-                # Criamos colunas para alinhar os balões exatamente acima das barras
                 cols_baloes = st.columns(len(df_top15))
                 for idx, (_, row) in enumerate(df_top15.iterrows()):
                     val_cmv = row[col_cmv_neg]
-                    # Se o valor for decimal (ex: 0.68), converte para 68.0
                     val_exibir = val_cmv if val_cmv > 1 else val_cmv * 100
-                    cor_fundo = "#28a745" if val_exibir <= 65 else "#dc3545"
+                    cor_fundo = "#e8f5e9" if val_exibir <= 65 else "#fdecea"
+                    cor_texto = "#28a745" if val_exibir <= 65 else "#dc3545"
+                    icone = "↑" if val_exibir > 65 else "↓"
                     
                     cols_baloes[idx].markdown(
                         f"""
                         <div style="
                             background-color: {cor_fundo}; 
-                            color: white; 
-                            padding: 4px 2px; 
-                            border-radius: 8px; 
+                            color: {cor_texto}; 
+                            padding: 5px 2px; 
+                            border-radius: 15px; 
                             text-align: center; 
-                            font-size: 11px; 
-                            font-weight: bold; 
-                            border: 1px solid white;
-                            box-shadow: 0px 2px 4px rgba(0,0,0,0.2);
-                            min-height: 40px;
+                            font-size: 12px; 
+                            font-weight: 800; 
+                            border: 1px solid {cor_texto};
+                            box-shadow: 0px 2px 4px rgba(0,0,0,0.1);
                             display: flex;
                             align-items: center;
                             justify-content: center;
-                            flex-direction: column;
-                            line-height: 1.1;
+                            min-height: 35px;
                         ">
-                            <span style="font-size: 9px; opacity: 0.9;">CMV</span>
-                            {val_exibir:.1f}%
+                            {icone} {val_exibir:.1f}%
                         </div>
                         """, unsafe_allow_html=True
                     )
@@ -244,14 +252,15 @@ if arquivo_negativas is not None:
                 y=col_ro_acum,
                 color=col_ro_acum,
                 color_continuous_scale='Reds_r',
-                text=col_multa if col_multa else None, 
-                title="" # Título removido para não encavalar com os balões
+                text=col_multa if col_multa else None
             )
             
             fig_top.update_traces(
                 texttemplate='Multa: R$ %{text:,.2f}' if col_multa else None, 
                 textposition='outside',
-                hovertemplate="<b>%{x}</b><br>Déficit Acum: R$ %{y:,.2f}"
+                marker_line_color='rgb(8,48,107)',
+                marker_line_width=1.5,
+                opacity=0.9
             )
             
             fig_top.update_layout(
@@ -259,10 +268,10 @@ if arquivo_negativas is not None:
                 xaxis_title=None, 
                 coloraxis_showscale=False,
                 margin=dict(t=10, b=0),
-                height=500
+                height=500,
+                template="plotly_white"
             )
             st.plotly_chart(fig_top, use_container_width=True)
-            st.info("💡 **Legenda:** Balões **Verdes** indicam CMV dentro da meta (≤ 65%). Balões **Vermelhos** indicam CMV acima da meta.")
 
     except Exception as e: st.error(f"Erro em Negativas: {e}")
 
@@ -322,7 +331,6 @@ if arquivo_dre is not None:
             })
             st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Composição de Gastos"), use_container_width=True)
 
-        # TABELA DETALHADA
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
         
