@@ -293,7 +293,7 @@ if arquivo_dre is not None:
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
         
-        # --- AJUSTE SOLICITADO: ESTILO DE LINHAS E REALCE POSITIVO ---
+        # --- AJUSTE: ESTILO DE LINHAS E REALCE POSITIVO (IGNORANDO META) ---
         def estilo_com_realce(row):
             styles = [''] * len(row)
             texto = str(row.iloc[1]).upper()
@@ -302,16 +302,16 @@ if arquivo_dre is not None:
             if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
                 styles = ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
             
-            # 2. Realce Verde para Meses Positivos especificamente na linha do Resultado Operacional
+            # 2. Realce Verde para Meses Positivos (Começa no índice 3 para pular a coluna 2 - Meta)
             if "RESULTADO OPERACIONAL" in texto:
-                for i in range(2, len(row)):
+                for i in range(3, len(row)):
                     val = clean_numeric(row.iloc[i])
                     if val > 0:
-                        styles[i] = 'background-color: #c8e6c9; font-weight: bold; color: #2e7d32;' # Verde suave
+                        styles[i] = 'background-color: #c8e6c9; font-weight: bold; color: #2e7d32;'
             return styles
 
         cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
-        cols_percent = [i for i in range(2, len(df_exibicao.columns), 2) if i not in cols_valor]
+        cols_percent = [i for i in range(2, len(df_exibicao.columns), 2)]
         
         def formatar_valor(val, tipo):
             num = clean_numeric(val)
