@@ -156,7 +156,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
-# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (COM AJUSTE VISUAL DO GRÁFICO E REMOÇÃO DE LEGENDA HTML)
+# 4. SEÇÃO: ANÁLISE DE NEGATIVAS (EXPANSÃO)
 st.markdown("---")
 st.header("Análise Avançada de Lojas Negativas (Expansão)")
 st.sidebar.markdown("---")
@@ -167,22 +167,15 @@ if arquivo_negativas is not None:
     try:
         df_neg = pd.read_csv(arquivo_negativas, engine='python') if "csv" in arquivo_negativas.name.lower() else pd.read_excel(arquivo_negativas)
         df_neg.columns = [str(c).strip() for c in df_neg.columns]
-        
-        # Identificação de colunas
         col_ro_acum = next((c for c in df_neg.columns if 'RO Acum' in c), None)
         col_desc = next((c for c in df_neg.columns if 'Desc_CC' in c), None)
         col_posicao = next((c for c in df_neg.columns if 'Posição Loja' in c), None)
         col_vagas = next((c for c in df_neg.columns if 'Vagas' in c), None)
         col_mercado = next((c for c in df_neg.columns if 'Próximo a mercado' in c), None)
-        col_multa = next((c for c in df_neg.columns if 'Multa rescisória atual' in c), None)
-        col_cmv_neg = next((c for c in df_neg.columns if 'CMV' in c and 'Acum' in c), None)
 
         if col_ro_acum and col_desc:
             df_neg[col_ro_acum] = df_neg[col_ro_acum].apply(clean_numeric)
             df_ana = df_neg[df_neg[col_desc].notna()].copy()
-            if col_multa: df_ana[col_multa] = df_ana[col_multa].apply(clean_numeric)
-            if col_cmv_neg: df_ana[col_cmv_neg] = df_ana[col_cmv_neg].apply(clean_numeric)
-
             st.subheader("🔍 Diagnóstico de Padrões")
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -196,64 +189,10 @@ if arquivo_negativas is not None:
             with c3:
                 if col_mercado:
                     per_mer = df_ana.groupby(col_mercado)[col_ro_acum].mean().sort_values()
-                    st.plotly_chart(px.pie(names=per_mer.index, values=abs(per_mer.values), title="Prejuízo Próximo a Mercado?", hole=0.4), use_container_width=True)
+                    st.plotly_chart(px.pie(names=per_mer.index, values=abs(per_mer.values), title="Prejuízo Próximo a Mercado?"), use_container_width=True)
             
-            # --- SEÇÃO TOP 15 COM AJUSTE VISUAL ---
-            st.subheader("📊 Top 15 Lojas com Maior Déficit (Análise RO vs Multa)")
-            df_top15 = df_ana.sort_values(by=col_ro_acum).head(15).copy()
-            
-            # Criação da etiqueta de texto customizada (Multa acima da barra, CMV no hover)
-            # Como solicitado, removemos os balões HTML e a legenda HTML. 
-            # O CMV vai apenas para o hover.
-            
-            fig_top = px.bar(
-                df_top15, 
-                x=col_desc, 
-                y=col_ro_acum,
-                color=col_ro_acum,
-                # Esquema de cores mais "premium" (Reds_r invertido para destacar o déficit)
-                color_continuous_scale='Reds_r',
-                # Texto direto sobre a barra (Multa Rescisória)
-                text=col_multa if col_multa else None, 
-                title="Ranking de Prejuízo Acumulado",
-                # Configuração para colocar o CMV no hover de forma limpa
-                hover_data={col_cmv_neg: ':.1f%'} if col_cmv_neg else None,
-                labels={col_desc: 'Unidade CC', col_ro_acum: 'RO Acumulado (R$)'}
-            )
-            
-            fig_top.update_traces(
-                # Formata a Multa no texto acima da barra
-                texttemplate='Multa: R$ %{text:,.2f}' if col_multa else None, 
-                textposition='outside',
-                # Define cor forte para as barras para visual mais premium
-                marker_line_color='rgb(8,48,107)',
-                marker_line_width=1.5,
-                opacity=0.9,
-                textfont=dict(size=11, color="black", family="Arial Black")
-            )
-            
-            # Ajuste de layout para melhoria visual geral
-            fig_top.update_layout(
-                yaxis_title="RO Acumulado (R$)", 
-                xaxis_title=None, 
-                coloraxis_showscale=False,
-                margin=dict(t=20, b=0),
-                height=600,
-                # Fonte premium e fundo branco puro
-                font_family="Arial, sans-serif",
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                xaxis={'tickangle': -45} # Inclina os nomes das lojas para visual mais limpo
-            )
-            
-            # Adiciona linhas de grade sutis
-            fig_top.update_yaxes(gridcolor='rgba(230,230,230,0.5)', zerolinecolor='rgb(50,50,50)')
-
-            st.plotly_chart(fig_top, use_container_width=True)
-            
-            # Dica de interpretação movida para o texto
-            st.info("💡 **Dica:** Os valores acima das barras indicam a **Multa Rescisória**. Passe o mouse sobre as barras para ver o **CMV Acumulado**.")
-
+            st.subheader("📊 Top 15 Lojas com Maior Déficit")
+            st.plotly_chart(px.bar(df_ana.sort_values(by=col_ro_acum).head(15), x=col_desc, y=col_ro_acum, color_continuous_scale='Reds_r'), use_container_width=True)
     except Exception as e: st.error(f"Erro em Negativas: {e}")
 
 # 5. SEÇÃO: DRE E RENTABILIDADE
@@ -312,6 +251,7 @@ if arquivo_dre is not None:
             })
             st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Composição de Gastos"), use_container_width=True)
 
+        # TABELA DETALHADA COM AJUSTE DE INDEXAÇÃO SOLICITADO
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
         
@@ -339,6 +279,7 @@ if arquivo_dre is not None:
             df_final = df_final.format(lambda x: formatar_valor(x, "val"), 
                                       subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
 
+        # AJUSTE PONTUAL: use_container_width=True e hide_index para permitir ajuste ao texto
         st.dataframe(df_final, use_container_width=True, hide_index=True)
 
     except Exception as e: st.error(f"Erro no DRE: {e}")
