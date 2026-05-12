@@ -175,13 +175,14 @@ if arquivo_negativas is not None:
         col_vagas = next((c for c in df_neg.columns if 'Vagas' in c), None)
         col_mercado = next((c for c in df_neg.columns if 'Próximo a mercado' in c), None)
         col_multa = next((c for c in df_neg.columns if 'Multa rescisória atual' in c), None)
-        col_cmv_acum = next((c for c in df_neg.columns if '% CMV Acum' in c or 'CMV Acum' in c), None)
+        # Tenta achar CMV Acumulado na planilha de negativas
+        col_cmv_neg = next((c for c in df_neg.columns if 'CMV' in c and 'Acum' in c), None)
 
         if col_ro_acum and col_desc:
             df_neg[col_ro_acum] = df_neg[col_ro_acum].apply(clean_numeric)
             df_ana = df_neg[df_neg[col_desc].notna()].copy()
             if col_multa: df_ana[col_multa] = df_ana[col_multa].apply(clean_numeric)
-            if col_cmv_acum: df_ana[col_cmv_acum] = df_ana[col_cmv_acum].apply(clean_numeric)
+            if col_cmv_neg: df_ana[col_cmv_neg] = df_ana[col_cmv_neg].apply(clean_numeric)
 
             st.subheader("🔍 Diagnóstico de Padrões")
             c1, c2, c3 = st.columns(3)
@@ -198,24 +199,41 @@ if arquivo_negativas is not None:
                     per_mer = df_ana.groupby(col_mercado)[col_ro_acum].mean().sort_values()
                     st.plotly_chart(px.pie(names=per_mer.index, values=abs(per_mer.values), title="Prejuízo Próximo a Mercado?", hole=0.4), use_container_width=True)
             
-            # --- AJUSTE SOLICITADO NO GRÁFICO DE TOP 15 COM INDICADOR CMV ---
+            # --- SEÇÃO TOP 15 COM BALÕES DE CMV ---
             st.subheader("📊 Top 15 Lojas com Maior Déficit (Análise RO vs Multa)")
             df_top15 = df_ana.sort_values(by=col_ro_acum).head(15).copy()
             
-            # Renderização dos indicadores de CMV no estilo da imagem
-            if col_cmv_acum:
-                cols_cards = st.columns(len(df_top15))
-                for i, (_, row) in enumerate(df_top15.iterrows()):
-                    cmv_val = row[col_cmv_acum]
-                    cor = "#28a745" if cmv_val <= 65 else "#dc3545" # Verde se <= 65%, Vermelho se maior
-                    # Formata o percentual (multiplica por 100 se vier como decimal 0.65)
-                    exibir_cmv = cmv_val if cmv_val > 1 else cmv_val * 100
+            # Renderização dos "Balões" de CMV acima do gráfico
+            if col_cmv_neg:
+                # Criamos colunas para alinhar os balões exatamente acima das barras
+                cols_baloes = st.columns(len(df_top15))
+                for idx, (_, row) in enumerate(df_top15.iterrows()):
+                    val_cmv = row[col_cmv_neg]
+                    # Se o valor for decimal (ex: 0.68), converte para 68.0
+                    val_exibir = val_cmv if val_cmv > 1 else val_cmv * 100
+                    cor_fundo = "#28a745" if val_exibir <= 65 else "#dc3545"
                     
-                    cols_cards[i].markdown(
+                    cols_baloes[idx].markdown(
                         f"""
-                        <div style="background-color: {cor}; color: white; padding: 5px; 
-                        border-radius: 5px; text-align: center; font-size: 10px; font-weight: bold; margin-bottom: 5px;">
-                        CMV<br>{exibir_cmv:.1f}%
+                        <div style="
+                            background-color: {cor_fundo}; 
+                            color: white; 
+                            padding: 4px 2px; 
+                            border-radius: 8px; 
+                            text-align: center; 
+                            font-size: 11px; 
+                            font-weight: bold; 
+                            border: 1px solid white;
+                            box-shadow: 0px 2px 4px rgba(0,0,0,0.2);
+                            min-height: 40px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            flex-direction: column;
+                            line-height: 1.1;
+                        ">
+                            <span style="font-size: 9px; opacity: 0.9;">CMV</span>
+                            {val_exibir:.1f}%
                         </div>
                         """, unsafe_allow_html=True
                     )
@@ -227,7 +245,7 @@ if arquivo_negativas is not None:
                 color=col_ro_acum,
                 color_continuous_scale='Reds_r',
                 text=col_multa if col_multa else None, 
-                title="Ranking de Prejuízo Acumulado"
+                title="" # Título removido para não encavalar com os balões
             )
             
             fig_top.update_traces(
@@ -240,10 +258,11 @@ if arquivo_negativas is not None:
                 yaxis_title="RO Acumulado (R$)", 
                 xaxis_title=None, 
                 coloraxis_showscale=False,
-                margin=dict(t=20) # Reduz margem superior para aproximar dos cards
+                margin=dict(t=10, b=0),
+                height=500
             )
             st.plotly_chart(fig_top, use_container_width=True)
-            st.info("💡 **Dica:** Os cartões coloridos indicam o CMV da unidade. Os valores acima das barras indicam a **Multa Rescisória**.")
+            st.info("💡 **Legenda:** Balões **Verdes** indicam CMV dentro da meta (≤ 65%). Balões **Vermelhos** indicam CMV acima da meta.")
 
     except Exception as e: st.error(f"Erro em Negativas: {e}")
 
