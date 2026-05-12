@@ -251,7 +251,7 @@ if arquivo_dre is not None:
             })
             st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Composição de Gastos"), use_container_width=True)
 
-        # TABELA DETALHADA COM AJUSTE DE PORCENTAGEM (COLUNAS 2, 4, 6... A PARTIR DA LINHA 2)
+        # TABELA DETALHADA COM AJUSTE DE PORCENTAGEM (OFFSET +1)
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
         
@@ -261,8 +261,9 @@ if arquivo_dre is not None:
                 return ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
             return [''] * len(row)
 
-        # Configuração das colunas para formatação
-        # Índices Python (0-based) para colunas visuais 2, 4, 6... até 32
+        # AJUSTE DE ÍNDICES: Colunas Pares (2, 4, 6... 32)
+        # No Python, coluna 2 é índice 1. 
+        # A sequência [1, 3, 5... 31] cobre as colunas visuais solicitadas.
         cols_percent = [i for i in range(1, 33, 2) if i < len(df_exibicao.columns)]
         
         def formatar_valor(val, tipo):
@@ -272,15 +273,15 @@ if arquivo_dre is not None:
 
         df_final = df_exibicao.style.apply(estilo_linhas_mestre, axis=1)
 
-        # Aplica porcentagem nas colunas solicitadas (2, 4, 6...) a partir da linha 2 (IndexSlice[1:, :])
+        # AJUSTE DE LINHA: Começa na Linha 3 (Índice 2 do Python)
         for col_idx in cols_percent:
             df_final = df_final.format(lambda x: formatar_valor(x, "pct"), 
-                                      subset=pd.IndexSlice[1:, df_exibicao.columns[col_idx]])
+                                      subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
 
-        # Aplica R$ na coluna de valores (Coluna 4 / Índice 3) a partir da linha 2
+        # Valor em R$ na Coluna 4 (Índice 3 do Python) a partir da Linha 3
         if len(df_exibicao.columns) > 3:
             df_final = df_final.format(lambda x: formatar_valor(x, "val"), 
-                                      subset=pd.IndexSlice[1:, df_exibicao.columns[3]])
+                                      subset=pd.IndexSlice[2:, df_exibicao.columns[3]])
 
         st.dataframe(df_final, use_container_width=True, hide_index=True)
 
