@@ -4,13 +4,13 @@ import streamlit as st
 import io
 
 # 1. CONFIGURAÇÃO DA PÁGINA
-st.set_page_config(page_title="Curva de Maturação", layout="wide")
+st.set_page_config(page_title="Curva de Maturação & Expansão", layout="wide")
 
-st.title("Projeção de Maturação: Analisador de Dados")
+st.title("Projeção de Maturação e Análise de Performance")
 st.markdown("---")
 
 # 2. ENTRADA DE DADOS DE PROJEÇÃO
-st.sidebar.header("Dados de Projeção")
+st.sidebar.header("1. Dados de Projeção")
 arquivo_subido = st.sidebar.file_uploader(
     "Upload da planilha de Taxas de Crescimento:", 
     type=["xlsx", "xls", "csv"],
@@ -69,14 +69,9 @@ if arquivo_subido is not None:
                              title=f"Evolução de Faturamento Projetada - {estado_sel}",
                              template="plotly_white", color_discrete_sequence=["#00CC96"])
                 fig.update_layout(xaxis=dict(tickmode='array', tickvals=meses_grafico), yaxis_tickformat="R$,.2f")
-                
-                # Meta 100% (Horizontal)
                 fig.add_hline(y=valor_estudo, line_dash="dash", line_color="red", annotation_text="Meta 100%")
-                
-                # LINHA DE CORTE 12 MESES (Vertical) - Adição solicitada
                 fig.add_vline(x=12, line_dash="dot", line_color="orange", 
                              annotation_text="Corte 12 Meses", annotation_position="top left")
-                
                 st.plotly_chart(fig, use_container_width=True)
                 
             with c2:
@@ -106,7 +101,7 @@ if arquivo_subido is not None:
 # --- SEÇÃO: HISTÓRICO REAL ---
 st.markdown("### Histórico Real vs Crescimento Projetado")
 st.sidebar.markdown("---")
-st.sidebar.header("Dados Históricos")
+st.sidebar.header("2. Dados Históricos")
 arquivo_historico = st.sidebar.file_uploader(
     "Upload da planilha de Vendas Realizadas (12 Meses):", 
     type=["xlsx", "xls", "csv"],
@@ -178,12 +173,98 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no processamento do histórico: {e}")
 
+
+# --- NOVA SEÇÃO: ANÁLISE DE LOJAS NEGATIVAS (EXPANSÃO) ---
+st.markdown("---")
+st.header("Análise de Lojas com Resultado Negativo (Expansão)")
+
+st.sidebar.markdown("---")
+st.sidebar.header("3. Análise de Negativas")
+arquivo_negativas = st.sidebar.file_uploader(
+    "Upload da planilha de Lojas Negativas:", 
+    type=["xlsx", "xls", "csv"],
+    key="neg_file"
+)
+
+if arquivo_negativas is not None:
+    try:
+        # Carregamento tratando vírgulas como decimais para o arquivo de expansão
+        if "csv" in arquivo_negativas.name.lower():
+            df_neg = pd.read_csv(arquivo_negativas, decimal=',', engine='python')
+        else:
+            df_neg = pd.read_excel(arquivo_negativas)
+
+        # Limpeza básica: remove linhas onde o Código da Unidade ou Resultado Acumulado são nulos
+        df_neg = df_neg.dropna(subset=['Cod Unidade', 'RO Acum'])
+
+        # Métricas Consolidadas
+        total_prejuizo_acum = df_neg['RO Acum'].sum()
+        media_aluguel_perc = df_neg['%Aluguel Mês'].mean() * 100
+        total_lojas = len(df_neg)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Prejuízo Acumulado Total", f"R$ {total_prejuizo_acum:,.2f}", delta_color="inverse")
+        c2.metric("Qtd. Lojas Analisadas", f"{total_lojas} unidades")
+        c3.metric("Peso Médio Aluguel", f"{media_aluguel_perc:.2f}%")
+
+        st.subheader("Diagnóstico de Ofensores e Padrões")
+        
+        t1, t2, t3 = st.tabs(["🔥 Top Ofensores", "🏠 Custo de Ocupação", "🏢 Perfil de Loja"])
+
+        with t1:
+            # Pareto de Prejuízo
+            df_neg_sorted = df_neg.sort_values(by='RO Acum', ascending=True).head(12)
+            fig_ofensores = px.bar(df_neg_sorted, x='Desc_CC', y='RO Acum', 
+                                  title="Unidades com Maior Prejuízo Acumulado",
+                                  color='RO Acum', color_continuous_scale='Reds_r',
+                                  labels={'RO Acum': 'Resultado Acum.', 'Desc_CC': 'Loja'})
+            st.plotly_chart(fig_ofensores, use_container_width=True)
+
+        with t2:
+            # Correlação Aluguel vs Margem
+            fig_corr = px.scatter(df_neg, x='%Aluguel Mês', y='%RO Mês', 
+                                 size='Aluguel Mês', hover_name='Desc_CC', color='Diretor',
+                                 title="Peso do Aluguel vs Margem Operacional (%)",
+                                 trendline="ols")
+            st.plotly_chart(fig_corr, use_container_width=True)
+            st.info("💡 Lojas no quadrante inferior direito indicam aluguel alto consumindo a pouca margem gerada.")
+
+        with t3:
+            # Análise por Posição de Loja (Esquina vs Meio)
+            df_pos = df_neg.groupby('Posição Loja')['RO Acum'].mean().reset_index()
+            fig_pos = px.pie(df_pos, values=df_pos['RO Acum'].abs(), names='Posição Loja', 
+                            title="Impacto Médio no Prejuízo por Posição de Imóvel",
+                            color_discrete_sequence=px.colors.qualitative.Pastel)
+            st.plotly_chart(fig_pos, use_container_width=True)
+
+        # Painel de Alertas Automáticos
+        st.markdown("#### 🔍 Insights de Negócios")
+        col_ins1, col_ins2 = st.columns(2)
+        
+        with col_ins1:
+            # Lojas com aluguel crítico
+            criticas = df_neg[df_neg['%Aluguel Mês'] > 0.10]['Desc_CC'].unique()
+            st.error(f"**Aluguel Crítico (>10% da Venda):** {len(criticas)} lojas.")
+            if len(criticas) > 0:
+                st.caption(", ".join(criticas))
+        
+        with col_ins2:
+            # Analise de Diretores
+            pior_diretoria = df_neg.groupby('Diretor')['RO Acum'].sum().idxmin()
+            st.warning(f"**Diretoria com Maior Déficit:** {pior_diretoria}")
+
+        st.dataframe(df_neg.style.background_gradient(subset=['RO Acum'], cmap='Reds_r'), use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Erro no processamento das Lojas Negativas: {e}")
+
+
 # --- SEÇÃO DRE ---
 st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 
 st.sidebar.markdown("---")
-st.sidebar.header("Dados Financeiros (DRE)")
+st.sidebar.header("4. Dados Financeiros (DRE)")
 arquivo_dre = st.sidebar.file_uploader(
     "Upload da planilha de DRE:", 
     type=["xlsx", "xls", "csv"],
@@ -219,7 +300,6 @@ if arquivo_dre is not None:
             return 0.0
 
         vals = {k: pegar_v(k) for k in termos.keys()}
-
         receita_base = vals['RL'] if vals['RL'] > 0 else vals['RB']
 
         match_cmv = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains("CMV", case=False, na=False)]
@@ -255,10 +335,8 @@ if arquivo_dre is not None:
             st.write("Alertas de Indicadores (Base: Receita Líquida):")
             if vals['RES'] < 0:
                 st.error(f"Resultado Negativo: Déficit operacional de R$ {abs(vals['RES']):,.2f}.")
-            
             if perc_margem < 35:
                 st.warning(f"Margem Abaixo da Meta ({perc_margem:.2f}%): A meta é 35%.")
-            
             if perc_perda > 1.5:
                 st.warning(f"Nível de Quebra Elevado ({perc_perda:.2f}%): A meta é 0,66%.")
 
@@ -269,7 +347,7 @@ if arquivo_dre is not None:
             }).sort_values(by="Valor", ascending=False)
             
             fig_ofensores = px.pie(df_gastos, values='Valor', names='Conta', 
-                                   title="Composição de Gastos Operacionais (% sobre Receita Líquida)",
+                                   title="Composição de Gastos Operacionais",
                                    color_discrete_sequence=px.colors.sequential.RdBu)
             fig_ofensores.update_traces(textinfo='percent+label')
             st.plotly_chart(fig_ofensores, use_container_width=True)
