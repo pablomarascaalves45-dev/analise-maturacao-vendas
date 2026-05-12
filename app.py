@@ -251,7 +251,7 @@ if arquivo_dre is not None:
             })
             st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Composição de Gastos"), use_container_width=True)
 
-        # TABELA DETALHADA COM AJUSTE DE PORCENTAGEM
+        # TABELA DETALHADA COM AJUSTE DE INDEXAÇÃO SOLICITADO
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
         
@@ -261,10 +261,12 @@ if arquivo_dre is not None:
                 return ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
             return [''] * len(row)
 
-        # AJUSTE SOLICITADO:
-        # Começa na Coluna de índice 2 (3ª coluna) e pula de 2 em 2
-        # Pula o índice 3 (Coluna 4) pois esta será em R$
-        cols_percent = [i for i in range(2, 33, 2) if i < len(df_exibicao.columns) and i != 3]
+        # LÓGICA DE COLUNAS (Índice 0 é a primeira coluna)
+        # Colunas de Moeda (R$): Começa na 3, 5 e pula de 2 em 2 (7, 9...)
+        cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
+        
+        # Colunas de Porcentagem (%): Índices pares a partir de 2 (2, 4, 6...)
+        cols_percent = [i for i in range(2, len(df_exibicao.columns), 2) if i not in cols_valor]
         
         def formatar_valor(val, tipo):
             num = clean_numeric(val)
@@ -273,15 +275,15 @@ if arquivo_dre is not None:
 
         df_final = df_exibicao.style.apply(estilo_linhas_mestre, axis=1)
 
-        # Formatação de Porcentagem baseada na regra de pular 2 em 2 a partir do índice 2
+        # Formatação de % (Índices pares: 2, 4, 6...)
         for col_idx in cols_percent:
             df_final = df_final.format(lambda x: formatar_valor(x, "pct"), 
                                       subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
 
-        # Formatação em Real (R$) para o índice 3 (Coluna 4)
-        if len(df_exibicao.columns) > 3:
+        # Formatação de R$ (Índices ímpares: 3, 5, 7...)
+        for col_idx in cols_valor:
             df_final = df_final.format(lambda x: formatar_valor(x, "val"), 
-                                      subset=pd.IndexSlice[2:, df_exibicao.columns[3]])
+                                      subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
 
         st.dataframe(df_final, use_container_width=True, hide_index=True)
 
