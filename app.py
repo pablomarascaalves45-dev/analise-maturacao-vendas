@@ -254,10 +254,10 @@ if arquivos_dre:
                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            # --- AJUSTE: CÁLCULOS DE PONTO DE EQUILÍBRIO E VENDA ALVO SUGERIDA ---
+            # --- AJUSTE SOLICITADO: CÁLCULOS DE PONTO DE EQUILÍBRIO ---
             meses_positivos = 0
             p_equilibrio, v_alvo_sugerida = 0.0, 0.0
-            cmv_exibicao_real = 0.0
+            cmv_final_calculo = 0.0 
             
             if "RES" in indices:
                 row_res = df_dre_raw.iloc[indices["RES"]]
@@ -266,38 +266,36 @@ if arquivos_dre:
                         meses_positivos += 1
                 
                 try:
-                    # Faturamento atual (Receita Líquida) na coluna índice 29
-                    faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
-                    # Resultado (Lucro/Prejuízo) na linha Resultado Operacional, coluna índice 29
-                    resultado_atual = clean_numeric(row_res[29])
+                    faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 3])
+                    resultado_atual = clean_numeric(row_res[3])
                     
-                    # 1. Cálculo do Ponto de Equilíbrio (Considera CMV Real do arquivo)
-                    cmv_exibicao_real = clean_numeric(df_dre_raw.iloc[indices["CMV"], 30])
-                    cmv_perc_real = abs(cmv_exibicao_real)
-                    if cmv_perc_real > 1: cmv_perc_real = cmv_perc_real / 100
-                    margem_cont_real = 1 - cmv_perc_real
+                    # Captura o valor bruto do CMV na coluna de percentual (ex: 66.0 ou 0.66)
+                    valor_cmv_raw = clean_numeric(df_dre_raw.iloc[indices["CMV"], 4])
+                    
+                    # Normalização para garantir a lógica decimal (ex: 66 -> 0.66)
+                    if abs(valor_cmv_raw) > 1:
+                        cmv_final_calculo = abs(valor_cmv_raw) / 100
+                    else:
+                        cmv_final_calculo = abs(valor_cmv_raw)
+                    
+                    # Cálculo do PE baseado no CMV extraído
+                    margem_cont_real = 1 - cmv_final_calculo
                     
                     if margem_cont_real > 0:
                         p_equilibrio = faturamento_atual + (abs(resultado_atual) / margem_cont_real)
                     else:
                         p_equilibrio = 0.0
 
-                    # 2. Cálculo da Venda Alvo Sugerida (Considera SEMPRE 65% de CMV - Meta Empresa)
-                    cmv_meta = 0.65
-                    margem_meta = 1 - cmv_meta # Resulta em 0.35 (35%)
-                    
-                    if margem_meta > 0:
-                        v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / margem_meta)
-                    else:
-                        v_alvo_sugerida = 0.0
+                    # Venda Alvo com Meta Empresa Fixa de 65%
+                    margem_meta = 1 - 0.65
+                    v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / margem_meta)
                 except:
-                    p_equilibrio = 0.0
-                    v_alvo_sugerida = 0.0
+                    p_equilibrio, v_alvo_sugerida, cmv_final_calculo = 0.0, 0.0, 0.0
 
             r1, r2, r3 = st.columns(3)
             r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
-            # Ajuste de Nomenclatura Dinâmica
-            r2.success(f"**Ponto de Equilíbrio CMV {abs(cmv_exibicao_real):.0f}%:** R$ {p_equilibrio:,.2f}")
+            # Exibição: Multiplica por 100 para mostrar como percentual no texto da caixa
+            r2.success(f"**Ponto de Equilíbrio CMV {cmv_final_calculo*100:.2f}%:** R$ {p_equilibrio:,.2f}")
             r3.warning(f"**Venda Alvo Sugerida CMV 65%:** R$ {v_alvo_sugerida:,.2f}")
             st.markdown("---")
 
