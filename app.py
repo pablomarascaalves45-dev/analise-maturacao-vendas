@@ -100,7 +100,30 @@ if uploaded_file:
             fig_scat_acum.update_layout(xaxis_ticksuffix="%")
             st.plotly_chart(fig_scat_acum, use_container_width=True)
 
-        # --- COMPARAÇÃO DE REPETIÇÃO ---
+        # --- NOVA SEÇÃO: RANKINGS DE CUSTO (ALUGUEL E MULTA) ---
+        st.markdown("---")
+        col_rank1, col_rank2 = st.columns(2)
+
+        with col_rank1:
+            st.subheader("Top 10 Maiores Aluguéis")
+            top_aluguel = df.nlargest(10, 'Aluguel Mês')
+            fig_aluguel = px.bar(top_aluguel, x='Aluguel Mês', y='Desc_CC', orientation='h',
+                                 color='Aluguel Mês', color_continuous_scale='Blues')
+            fig_aluguel.update_layout(yaxis={'categoryorder':'total ascending'})
+            st.plotly_chart(fig_aluguel, use_container_width=True)
+
+        with col_rank2:
+            st.subheader("Top 10 Maiores Multas")
+            if 'Multa rescisória atual' in df.columns:
+                top_multa = df.nlargest(10, 'Multa rescisória atual')
+                fig_multa = px.bar(top_multa, x='Multa rescisória atual', y='Desc_CC', orientation='h',
+                                   color='Multa rescisória atual', color_continuous_scale='Oranges')
+                fig_multa.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig_multa, use_container_width=True)
+            else:
+                st.info("Aguardando dados de multa rescisória.")
+
+        # --- COMPARAÇÃO DE REPETIÇÃO (MOVIDO PARA O FINAL) ---
         st.markdown("---")
         st.subheader("Cruzamento de Dados: Unidades Críticas Recorrentes")
         
@@ -137,29 +160,6 @@ if uploaded_file:
                     """)
         else:
             st.write("Não há recorrência de lojas entre os rankings selecionados.")
-
-        # --- NOVA SEÇÃO: RANKINGS DE CUSTO (ALUGUEL E MULTA) ---
-        st.markdown("---")
-        col_rank1, col_rank2 = st.columns(2)
-
-        with col_rank1:
-            st.subheader("Top 10 Maiores Aluguéis")
-            top_aluguel = df.nlargest(10, 'Aluguel Mês')
-            fig_aluguel = px.bar(top_aluguel, x='Aluguel Mês', y='Desc_CC', orientation='h',
-                                 color='Aluguel Mês', color_continuous_scale='Blues')
-            fig_aluguel.update_layout(yaxis={'categoryorder':'total ascending'})
-            st.plotly_chart(fig_aluguel, use_container_width=True)
-
-        with col_rank2:
-            st.subheader("Top 10 Maiores Multas")
-            if 'Multa rescisória atual' in df.columns:
-                top_multa = df.nlargest(10, 'Multa rescisória atual')
-                fig_multa = px.bar(top_multa, x='Multa rescisória atual', y='Desc_CC', orientation='h',
-                                   color='Multa rescisória atual', color_continuous_scale='Oranges')
-                fig_multa.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_multa, use_container_width=True)
-            else:
-                st.info("Aguardando dados de multa rescisória.")
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
