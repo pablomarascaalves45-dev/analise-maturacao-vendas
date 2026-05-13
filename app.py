@@ -3,7 +3,9 @@ import plotly.express as px
 import streamlit as st
 import io
 
+# ==============================================================================
 # 1. CONFIGURAÇÃO DO DASHBOARD
+# ==============================================================================
 st.set_page_config(page_title="Gestão de Maturação e DRE", layout="wide")
 
 st.title("Sistema de Análise: Expansão e Performance")
@@ -13,7 +15,7 @@ def clean_numeric(val):
     if pd.isna(val) or val == "" or val == "-" or val == " ":
         return 0.0
     try:
-        s = str(val).replace('R$', '').replace('%', '').strip()
+        s = str(val).replace('R$', '').replace('%', '').replace(' ', '').strip()
         if ',' in s and '.' in s:
             s = s.replace('.', '').replace(',', '.')
         elif ',' in s:
@@ -22,7 +24,10 @@ def clean_numeric(val):
     except:
         return 0.0
 
-# 2. PROJEÇÃO DE CRESCIMENTO
+# ==============================================================================
+# 2. PROJEÇÃO DE CRESCIMENTO (MATURAÇÃO)
+# ==============================================================================
+st.header("1. Projeção de Maturação")
 st.sidebar.header("1. Parâmetros de Projeção")
 arquivo_subido = st.sidebar.file_uploader(
     "Taxas de Crescimento:", 
@@ -103,9 +108,85 @@ if arquivo_subido is not None:
     except Exception as e:
         st.error(f"Erro no processamento da projeção: {e}")
 
-# 3. COMPARATIVO REAL
+# ==============================================================================
+# NOVA SEÇÃO: 2. DIAGNÓSTICO INVESTIGATIVO (PLANILHA DE NEGATIVAS)
+# ==============================================================================
 st.markdown("---")
-st.sidebar.header("2. Dados Históricos")
+st.header("2. Diagnóstico Investigativo: Expansão e Negativas")
+st.sidebar.header("2. Diagnóstico de Negativas")
+
+arquivo_negativas = st.sidebar.file_uploader(
+    "Planilha de Negativas/Expansão:", 
+    type=["xlsx", "xls", "csv"], 
+    key="neg_file_diag"
+)
+
+if arquivo_negativas is not None:
+    try:
+        if "csv" in arquivo_negativas.name.lower():
+            df_neg = pd.read_csv(arquivo_negativas, decimal=',', engine='python')
+        else:
+            df_neg = pd.read_excel(arquivo_negativas)
+
+        # Normalização de Colunas
+        df_neg.columns = [str(c).strip() for c in df_neg.columns]
+        
+        # Mapeamento de colunas financeiras
+        col_ro_mes = 'RO Mês' if 'RO Mês' in df_neg.columns else df_neg.columns[5]
+        col_ro_acum = 'RO Acum' if 'RO Acum' in df_neg.columns else df_neg.columns[7]
+        col_multa = 'Multa rescisória atual' if 'Multa rescisória atual' in df_neg.columns else df_neg.columns[12]
+
+        # Conversão numérica
+        df_neg[col_ro_mes] = df_neg[col_ro_mes].apply(clean_numeric)
+        df_neg[col_ro_acum] = df_neg[col_ro_acum].apply(clean_numeric)
+        df_neg[col_multa] = df_neg[col_multa].apply(clean_numeric)
+
+        # Cálculo das Métricas Solicitadas
+        total_lojas = len(df_neg)
+        prejuizo_mes = df_neg[df_neg[col_ro_mes] < 0][col_ro_mes].sum()
+        prejuizo_acum = df_neg[df_neg[col_ro_acum] < 0][col_ro_acum].sum()
+        total_multas = df_neg[col_multa].sum()
+
+        # Exibição dos KPIs
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Total de Lojas", f"{total_lojas}")
+        k2.metric("Prejuízo (Mês)", f"R$ {prejuizo_mes:,.2f}", delta_color="inverse")
+        k3.metric("Prejuízo (Acumulado)", f"R$ {prejuizo_acum:,.2f}", delta_color="inverse")
+        k4.metric("Soma das Multas", f"R$ {total_multas:,.2f}")
+
+        # Gráficos de Diagnóstico
+        g1, g2 = st.columns(2)
+        
+        with g1:
+            st.write("**📡 Densidade Competitiva vs Resultado**")
+            col_redes = [c for c in df_neg.columns if 'Total Redes' in c or 'Qtd_Total' in c]
+            if col_redes:
+                fig_comp = px.scatter(df_neg, x=col_redes[0], y=col_ro_mes, 
+                                     hover_name='Desc_CC' if 'Desc_CC' in df_neg.columns else None,
+                                     trendline="ols", template="plotly_white",
+                                     title="Impacto da Concorrência no RO")
+                st.plotly_chart(fig_comp, use_container_width=True)
+
+        with g2:
+            st.write("**🏆 Top Concorrentes Próximos**")
+            col_conc = [c for c in df_neg.columns if any(x in str(c) for x in ["SaoJoao", "Panvel", "Raia", "Nissei", "Pacheco"])]
+            if col_conc:
+                soma_conc = df_neg[col_conc].apply(pd.to_numeric, errors='coerce').sum().sort_values(ascending=False).head(10)
+                fig_conc = px.bar(soma_conc, orientation='h', color_discrete_sequence=['#EF553B'], title="Presença de Redes")
+                st.plotly_chart(fig_conc, use_container_width=True)
+
+        st.write("**📋 Detalhamento das Unidades Analisadas**")
+        st.dataframe(df_neg.sort_values(by=col_ro_mes), use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Erro no diagnóstico de negativas: {e}")
+
+# ==============================================================================
+# 3. COMPARATIVO REAL
+# ==============================================================================
+st.markdown("---")
+st.header("3. Comparativo Realizado vs. Projetado")
+st.sidebar.header("3. Dados Históricos")
 arquivo_historico = st.sidebar.file_uploader(
     "Histórico de Vendas Realizadas:", 
     type=["xlsx", "xls", "csv"], 
@@ -149,17 +230,12 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
+# ==============================================================================
 # 4. ANÁLISE FINANCEIRA (DRE)
+# ==============================================================================
 st.markdown("---")
-st.header("Análise de DRE e Rentabilidade")
-st.sidebar.header("3. Relatórios Financeiros")
-
-if "dre_file" in st.session_state and st.session_state.dre_file:
-    nomes_arquivos = [f.name for f in st.session_state.dre_file]
-    opcoes_filtro = ["Todas"] + nomes_arquivos
-    selecionados = st.sidebar.multiselect("Filtrar Unidades:", opcoes_filtro, default="Todas")
-else:
-    selecionados = ["Todas"]
+st.header("4. Análise de DRE e Rentabilidade")
+st.sidebar.header("4. Relatórios Financeiros")
 
 arquivos_dre = st.sidebar.file_uploader(
     "Upload de arquivos DRE:", 
@@ -169,12 +245,7 @@ arquivos_dre = st.sidebar.file_uploader(
 )
 
 if arquivos_dre:
-    if "Todas" in selecionados or not selecionados:
-        arquivos_para_processar = arquivos_dre
-    else:
-        arquivos_para_processar = [f for f in arquivos_dre if f.name in selecionados]
-
-    for arquivo_dre in arquivos_para_processar:
+    for arquivo_dre in arquivos_dre:
         try:
             st.markdown(f"### 🏢 Unidade: {arquivo_dre.name}")
             df_dre_raw = pd.read_excel(arquivo_dre, header=None)
@@ -234,69 +305,33 @@ if arquivos_dre:
                 if num == 0 and (val == "" or val == "-"): return val
                 return f"{num:.2f}%" if tipo == "pct" else f"R$ {num:,.2f}"
 
-            def aplicar_estilo_mestre(row):
-                styles = [''] * len(row)
-                texto = str(row.iloc[1]).upper()
-                if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
-                    styles = ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
-                if "RESULTADO OPERACIONAL" in texto:
-                    for i in range(3, len(row)):
-                        if clean_numeric(row.iloc[i]) > 0:
-                            styles[i] = 'background-color: #c8e6c9; color: #2e7d32; font-weight: bold;'
-                return styles
-
-            df_final = df_exibicao.style.apply(aplicar_estilo_mestre, axis=1)
+            df_final = df_exibicao.style
             for col_idx in cols_percent:
-                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "pct"), 
-                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "pct"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             for col_idx in cols_valor:
-                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "val"), 
-                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "val"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            # --- AJUSTE CORRIGIDO: PONTO DE EQUILÍBRIO E EXIBIÇÃO DO CMV ---
+            # --- PROJEÇÕES FINAIS ---
             meses_positivos = 0
-            p_equilibrio, v_alvo_sugerida = 0.0, 0.0
-            cmv_exibicao_formatado = 0.0
-            
             if "RES" in indices:
                 row_res = df_dre_raw.iloc[indices["RES"]]
                 for i in range(3, len(row_res), 2):
-                    if clean_numeric(row_res[i]) > 0: 
-                        meses_positivos += 1
+                    if clean_numeric(row_res[i]) > 0: meses_positivos += 1
                 
                 try:
-                    faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
-                    resultado_atual = clean_numeric(row_res[29])
+                    f_at = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
+                    res_at = clean_numeric(row_res[29])
+                    cmv_at = abs(clean_numeric(df_dre_raw.iloc[indices["CMV"], 30]))
+                    if cmv_at > 1: cmv_at /= 100
+                    p_eq = f_at + (abs(res_at) / (1 - cmv_at)) if (1-cmv_at) > 0 else 0
+                    v_alvo = f_at + (abs(res_at) / 0.35)
                     
-                    # Captura o CMV da coluna 30
-                    cmv_bruto = clean_numeric(df_dre_raw.iloc[indices["CMV"], 30])
-                    
-                    # Normalização Inteligente:
-                    # Se vier 0.66 (decimal), usamos 0.66. Se vier 66.0 (inteiro), dividimos por 100.
-                    cmv_para_calculo = abs(cmv_bruto)
-                    if cmv_para_calculo > 1: 
-                        cmv_para_calculo = cmv_para_calculo / 100
-                    
-                    # Valor para aparecer no texto (Sempre em escala 0-100)
-                    cmv_exibicao_formatado = cmv_para_calculo * 100
-                    
-                    margem_cont_real = 1 - cmv_para_calculo
-                    
-                    if margem_cont_real > 0:
-                        p_equilibrio = faturamento_atual + (abs(resultado_atual) / margem_cont_real)
-                    else:
-                        p_equilibrio = 0.0
-
-                    v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / 0.35) # Meta 35% Margem
-                except:
-                    p_equilibrio, v_alvo_sugerida = 0.0, 0.0
-
-            r1, r2, r3 = st.columns(3)
-            r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
-            # Agora exibe o percentual correto (66% em vez de 1%)
-            r2.success(f"**Ponto de Equilíbrio CMV {cmv_exibicao_formatado:.0f}%:** R$ {p_equilibrio:,.2f}")
-            r3.warning(f"**Venda Alvo Sugerida CMV 65%:** R$ {v_alvo_sugerida:,.2f}")
+                    r1, r2, r3 = st.columns(3)
+                    r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
+                    r2.success(f"**Ponto de Equilíbrio (CMV {cmv_at*100:.0f}%):** R$ {p_eq:,.2f}")
+                    r3.warning(f"**Venda Alvo (Margem 65%):** R$ {v_alvo:,.2f}")
+                except: pass
             st.markdown("---")
 
         except Exception as e:
