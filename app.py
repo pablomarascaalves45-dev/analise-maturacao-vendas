@@ -13,10 +13,10 @@ st.markdown("---")
 def load_data(file):
     df = pd.read_excel(file)
     
-    # Padroniza nomes das colunas removendo espaços extras (evita KeyError)
+    # Remove espaços em branco extras dos nomes das colunas
     df.columns = df.columns.str.strip()
     
-    # Lista atualizada incluindo a coluna de Multa para limpeza
+    # Lista de colunas financeiras (Verifica se existem antes de processar)
     cols_financeiras = ['RO Mês', 'RO Acum', 'Aluguel Mês', '%RO Mês', '%RO Acum', '%Aluguel Mês', 'Multa rescisória atual']
     
     for col in cols_financeiras:
@@ -28,10 +28,9 @@ def load_data(file):
                            .str.replace('.', '', regex=False)
                            .str.replace(',', '.', regex=False)
                            .strip())
-            # Converte para numérico e remove valores nulos/erros
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
-            # Ajuste de percentuais
+            # AJUSTE: Se o valor for decimal (ex: 0.04), converte para percentual inteiro (4.0)
             if col.startswith('%'):
                 if df[col].abs().mean() < 1.0:
                     df[col] = df[col] * 100
@@ -139,30 +138,29 @@ if uploaded_file:
         else:
             st.write("Não há recorrência de lojas entre os rankings selecionados.")
 
-        # --- RANKING DE CUSTOS (ALUGUEL E MULTA) ---
+        # --- NOVA SEÇÃO: ALUGUÉIS E MULTAS ---
         st.markdown("---")
-        c_aluguel, c_multa = st.columns(2)
+        col_fin1, col_fin2 = st.columns(2)
 
-        with c_aluguel:
+        with col_fin1:
             st.subheader("Top 10 Aluguéis Mais Altos")
-            # Usa nlargest para pegar os 10 maiores
-            top_10_aluguel = df.nlargest(10, 'Aluguel Mês')
-            fig_top_aluguel = px.bar(top_10_aluguel, x='Aluguel Mês', y='Desc_CC', orientation='h',
-                                     color='Aluguel Mês', color_continuous_scale='Viridis')
-            fig_top_aluguel.update_layout(yaxis={'categoryorder':'total ascending'})
-            st.plotly_chart(fig_top_aluguel, use_container_width=True)
+            top_aluguel = df.nlargest(10, 'Aluguel Mês')
+            fig_aluguel = px.bar(top_aluguel, x='Aluguel Mês', y='Desc_CC', orientation='h',
+                                 color='Aluguel Mês', color_continuous_scale='Blues')
+            fig_aluguel.update_layout(yaxis={'categoryorder':'total ascending'})
+            st.plotly_chart(fig_aluguel, use_container_width=True)
 
-        with c_multa:
+        with col_fin2:
             st.subheader("Top 10 Multas Rescisórias")
-            nome_col_multa = 'Multa rescisória atual'
-            if nome_col_multa in df.columns:
-                top_10_multa = df.nlargest(10, nome_col_multa)
-                fig_top_multa = px.bar(top_10_multa, x=nome_col_multa, y='Desc_CC', orientation='h',
-                                       color=nome_col_multa, color_continuous_scale='Plasma')
-                fig_top_multa.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_top_multa, use_container_width=True)
+            col_multa = 'Multa rescisória atual'
+            if col_multa in df.columns:
+                top_multas = df.nlargest(10, col_multa)
+                fig_multas = px.bar(top_multas, x=col_multa, y='Desc_CC', orientation='h',
+                                    color=col_multa, color_continuous_scale='Oranges')
+                fig_multas.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig_multas, use_container_width=True)
             else:
-                st.warning("Coluna 'Multa rescisória atual' não encontrada.")
+                st.warning("Coluna de Multas não encontrada para geração do gráfico.")
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
