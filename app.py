@@ -99,6 +99,23 @@ if uploaded_file:
             fig_scat_acum.update_layout(xaxis_ticksuffix="%")
             st.plotly_chart(fig_scat_acum, use_container_width=True)
 
+        # --- COMPARAÇÃO DE REPETIÇÃO (INSIGHT) ---
+        st.markdown("---")
+        st.subheader("🎯 Cruzamento de Dados: Unidades Críticas Recorrentes")
+        
+        # Identificando as lojas que se repetem nos dois Top 10
+        lojas_mes = set(top_negativas['Desc_CC'])
+        lojas_acum = set(top_negativas_acum['Desc_CC'])
+        lojas_repetidas = lojas_mes.intersection(lojas_acum)
+        
+        if lojas_repetidas:
+            st.warning(f"Identificamos {len(lojas_repetidas)} lojas que estão no Top 10 tanto do Mês quanto do Acumulado:")
+            cols = st.columns(len(lojas_repetidas) if len(lojas_repetidas) <= 5 else 5)
+            for i, loja in enumerate(lojas_repetidas):
+                cols[i % 5].info(f"**{loja}**")
+        else:
+            st.success("Não há lojas repetidas entre os dois rankings de criticidade.")
+
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
 else:
