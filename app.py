@@ -109,7 +109,7 @@ if arquivo_subido is not None:
         st.error(f"Erro na seção 1: {e}")
 
 # ==============================================================================
-# 2. DIAGNÓSTICO DE EXPANSÃO (ANÁLISE ROBUSTA)
+# 2. DIAGNÓSTICO DE EXPANSÃO (ANÁLISE DE NEGATIVAS)
 # ==============================================================================
 st.markdown("---")
 st.header("2. Diagnóstico Investigativo: Expansão e Negativas")
@@ -123,63 +123,58 @@ arquivo_negativas = st.sidebar.file_uploader(
 
 if arquivo_negativas is not None:
     try:
-        # Carregamento
         if "csv" in arquivo_negativas.name.lower():
             df_neg = pd.read_csv(arquivo_negativas, decimal=',', engine='python')
         else:
             df_neg = pd.read_excel(arquivo_negativas)
 
-        # Normalização de Colunas
+        # Normalização de colunas
         df_neg.columns = [str(c).strip() for c in df_neg.columns]
         
-        # Mapeamento de colunas principais
+        # Mapeamento de colunas principais para cálculo
         col_ro = 'RO Mês' if 'RO Mês' in df_neg.columns else df_neg.columns[5]
         col_ro_acum = 'RO Acum' if 'RO Acum' in df_neg.columns else df_neg.columns[7]
         col_multa = 'Multa rescisória atual' if 'Multa rescisória atual' in df_neg.columns else df_neg.columns[12]
         
-        # Tratamento numérico
+        # Limpeza numérica
         df_neg[col_ro] = df_neg[col_ro].apply(clean_numeric)
         df_neg[col_ro_acum] = df_neg[col_ro_acum].apply(clean_numeric)
         df_neg[col_multa] = df_neg[col_multa].apply(clean_numeric)
 
-        # --- CÁLCULOS ROBUSTOS ---
+        # --- MÉTRICAS SOLICITADAS ---
         qtd_lojas = len(df_neg)
         soma_prejuizo_mes = df_neg[df_neg[col_ro] < 0][col_ro].sum()
         soma_prejuizo_acum = df_neg[df_neg[col_ro_acum] < 0][col_ro_acum].sum()
         soma_multas = df_neg[col_multa].sum()
 
-        # --- EXIBIÇÃO DAS MÉTRICAS ---
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Qtd Lojas", f"{qtd_lojas}")
-        k2.metric("Prejuízo Mês", f"R$ {soma_prejuizo_mes:,.2f}", delta_color="inverse")
-        k3.metric("Prejuízo Acum.", f"R$ {soma_prejuizo_acum:,.2f}", delta_color="inverse")
-        k4.metric("Soma Multas", f"R$ {soma_multas:,.2f}")
+        k1.metric("Qtd Lojas Analisadas", f"{qtd_lojas}")
+        k2.metric("Soma Prejuízo Mês", f"R$ {soma_prejuizo_mes:,.2f}", delta_color="inverse")
+        k3.metric("Soma Prejuízo Acum.", f"R$ {soma_prejuizo_acum:,.2f}", delta_color="inverse")
+        k4.metric("Soma das Multas", f"R$ {soma_multas:,.2f}")
 
         st.markdown("---")
         
         # --- ANÁLISE DE CONCORRÊNCIA ---
         col_graf1, col_graf2 = st.columns(2)
-
         with col_graf1:
             st.write("**📡 Densidade Competitiva vs. Resultado**")
-            # Procura por coluna de total de redes ou similar
-            col_total = [c for c in df_neg.columns if 'Total Redes' in c or 'Qtd_Total' in c]
-            if col_total:
-                fig_redes = px.scatter(df_neg, x=col_total[0], y=col_ro,
+            col_total_redes = [c for c in df_neg.columns if 'Total Redes' in c]
+            if col_total_redes:
+                fig_redes = px.scatter(df_neg, x=col_total_redes[0], y=col_ro,
                                       hover_name='Desc_CC' if 'Desc_CC' in df_neg.columns else None, 
                                       trendline="ols",
-                                      title="Impacto do nº de Concorrentes no RO")
+                                      title="Competição vs Performance Operacional")
                 st.plotly_chart(fig_redes, use_container_width=True)
 
         with col_graf2:
-            st.write("**🏆 Top Redes Concorrentes (Impacto)**")
+            st.write("**🏆 Redes Concorrentes Predominantes**")
             col_conc = [c for c in df_neg.columns if any(x in str(c) for x in ["Panvel", "Raia", "Nissei", "Pacheco", "SaoJoao", "Independentes"])]
             if col_conc:
                 soma_conc = df_neg[col_conc].apply(pd.to_numeric, errors='coerce').sum().sort_values(ascending=False).head(10)
                 fig_bar_conc = px.bar(soma_conc, orientation='h', color_discrete_sequence=['#EF553B'])
                 st.plotly_chart(fig_bar_conc, use_container_width=True)
 
-        # --- TABELA DE PRIORIZAÇÃO ---
         st.write("**📋 Detalhamento Estratégico (Unidades em Déficit)**")
         cols_view = [c for c in ['Desc_CC', col_ro, col_ro_acum, 'Posição Loja', 'Próximo a mercado'] if c in df_neg.columns]
         st.dataframe(df_neg[cols_view].sort_values(by=col_ro), use_container_width=True)
@@ -201,14 +196,11 @@ arquivo_historico = st.sidebar.file_uploader(
 
 if arquivo_historico is not None:
     try:
-        if "csv" in arquivo_historico.name.lower():
-            df_hist = pd.read_csv(arquivo_historico, decimal='.', engine='python')
-        else:
-            df_hist = pd.read_excel(arquivo_historico)
+        df_hist = pd.read_csv(arquivo_historico, decimal='.', engine='python') if "csv" in arquivo_historico.name.lower() else pd.read_excel(arquivo_historico)
 
         if 'Desc_Filial' in df_hist.columns:
             filiais = sorted(df_hist['Desc_Filial'].unique())
-            filial_sel = st.selectbox("Selecione a Filial:", filiais)
+            filial_sel = st.selectbox("Selecione a Filial para Comparação:", filiais)
             df_lo_ja = df_hist[df_hist['Desc_Filial'] == filial_sel].copy().sort_values(by='AnoMes')
             
             venda_inicial_real = df_lo_ja['Mercadoria'].iloc[0]
@@ -247,9 +239,9 @@ st.header("4. Análise de DRE e Rentabilidade")
 st.sidebar.header("4. Relatórios Financeiros")
 
 arquivos_dre = st.sidebar.file_uploader(
-    "Upload de arquivos DRE:", 
+    "Upload de arquivos DRE (Individual por Loja):", 
     type=["xlsx", "xls", "csv"], 
-    key="dre_file",
+    key="dre_file_uploader",
     accept_multiple_files=True
 )
 
@@ -289,7 +281,8 @@ if arquivos_dre:
             perc_cmv_head = (abs(vals['CMV']) / receita_base) * 100
             c5.metric("CMV %", f"{perc_cmv_head:.1f}%")
 
-            st.info(f"Processamento da DRE para {arquivo_dre.name} concluído.")
+            st.info(f"Análise de DRE concluída para {arquivo_dre.name}")
+            st.markdown("---")
             
         except Exception as e:
-            st.error(f"Erro na seção 4 ({arquivo_dre.name}): {e}")
+            st.error(f"Erro no processamento da DRE ({arquivo_dre.name}): {e}")
