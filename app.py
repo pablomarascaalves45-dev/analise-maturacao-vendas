@@ -293,17 +293,17 @@ if arquivo_dre is not None:
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
         
-        # --- Lógica de Contagem de Meses Positivos Ajustada ---
+        # --- AJUSTE NA LÓGICA DE CONTAGEM ---
         meses_positivos = 0
         venda_necessaria_idx29 = 0.0
         ponto_equilibrio_idx30 = 0.0
         
         if "RES" in indices:
             row_res = df_dre_raw.iloc[indices["RES"]]
-            # Contar apenas células que contenham valores numéricos válidos e maiores que zero
+            # Inicia em 3 (primeira coluna de valores) e percorre as colunas
             for i in range(3, len(row_res)):
                 valor_bruto = row_res[i]
-                # Verifica se a célula não está vazia, se não é um traço e se a conversão numérica é > 0
+                # Valida se a célula não é vazia, não é apenas um traço e se o número limpo é positivo
                 if pd.notna(valor_bruto) and str(valor_bruto).strip() not in ["", "-", "0", "0.0"]:
                     num_limpo = clean_numeric(valor_bruto)
                     if num_limpo > 0:
@@ -313,13 +313,11 @@ if arquivo_dre is not None:
                 venda_necessaria_idx29 = clean_numeric(row_res[29])
                 ponto_equilibrio_idx30 = clean_numeric(row_res[30])
 
-        # --- ESTILO DE LINHAS E REALCE ---
         def estilo_com_realce(row):
             styles = [''] * len(row)
             texto = str(row.iloc[1]).upper()
             if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
                 styles = ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
-            
             if "RESULTADO OPERACIONAL" in texto:
                 for i in range(3, len(row)):
                     val = clean_numeric(row.iloc[i])
@@ -343,7 +341,6 @@ if arquivo_dre is not None:
 
         st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-        # --- RELATÓRIO DE PERFORMANCE ---
         st.markdown("### 📋 Relatório de Diagnóstico Financeiro")
         r1, r2, r3 = st.columns(3)
         with r1:
