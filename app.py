@@ -154,7 +154,7 @@ st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 st.sidebar.header("3. Relatórios Financeiros")
 
-# FILTRO DE SELEÇÃO INICIALIZADO ANTES DO UPLOAD PARA PERMITIR POSICIONAMENTO SUPERIOR
+# Filtro de Unidades
 if "dre_file" in st.session_state and st.session_state.dre_file:
     nomes_arquivos = [f.name for f in st.session_state.dre_file]
     opcoes_filtro = ["Todas"] + nomes_arquivos
@@ -170,7 +170,6 @@ arquivos_dre = st.sidebar.file_uploader(
 )
 
 if arquivos_dre:
-    # Lógica de filtragem
     if "Todas" in selecionados or not selecionados:
         arquivos_para_processar = arquivos_dre
     else:
@@ -203,7 +202,6 @@ if arquivos_dre:
             receita_base = vals['RL'] if vals['RL'] > 0 else (vals['RB'] if vals['RB'] > 0 else 1.0)
             perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
 
-            # Indicadores Principais
             c1, c2, c3, c4, c5 = st.columns(5) 
             c1.metric("Receita Líquida", f"R$ {vals['RL']:,.2f}")
             c2.metric("Margem Contrib.", f"R$ {vals['MC']:,.2f}")
@@ -212,7 +210,6 @@ if arquivos_dre:
             perc_cmv = (abs(vals['CMV']) / receita_base) * 100
             c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{perc_cmv:.1f}%")
 
-            # Dashboard Operacional
             col_diag, col_graf = st.columns([1, 1])
             with col_diag:
                 perc_margem = (vals['MC'] / receita_base) * 100
@@ -226,29 +223,23 @@ if arquivos_dre:
                     "Conta": ["Folha", "ADM", "Operação", "Quebra"],
                     "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
                 })
-                st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, 
-                                     title=f"Distribuição de Custos"), use_container_width=True)
+                st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title=f"Distribuição de Custos"), use_container_width=True)
 
-            # Tabela Estruturada
+            # --- PARTE AJUSTADA CONFORME O CÓDIGO ANTIGO ---
             st.subheader("DRE Detalhado")
             df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
-            
-            # Cálculos de Equilíbrio
-            meses_positivos = 0
-            v_necessaria = 0.0
-            p_equilibrio = 0.0
-            
-            if "RES" in indices:
-                row_res = df_dre_raw.iloc[indices["RES"]]
-                for i in range(3, len(row_res)):
-                    num_limpo = clean_numeric(row_res[i])
-                    if num_limpo > 0: meses_positivos += 1
-                
-                if len(row_res) > 30:
-                    v_necessaria = clean_numeric(row_res[29])
-                    p_equilibrio = clean_numeric(row_res[30])
 
-            def aplicar_estilo(row):
+            # Identificação das colunas de Valor e Percentual baseadas na imagem image_3bae1b.png
+            # Colunas de valor costumam ser as ímpares (3, 5, 7...) e percentuais as pares (4, 6, 8...) após o cabeçalho
+            cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
+            cols_percent = [i for i in range(2, len(df_exibicao.columns), 2) if i not in cols_valor]
+
+            def formatar_estilo_celula(val, tipo):
+                num = clean_numeric(val)
+                if num == 0 and (val == "" or val == "-"): return val
+                return f"{num:.2f}%" if tipo == "pct" else f"R$ {num:,.2f}"
+
+            def aplicar_estilo_mestre(row):
                 styles = [''] * len(row)
                 texto = str(row.iloc[1]).upper()
                 if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
@@ -259,15 +250,35 @@ if arquivos_dre:
                             styles[i] = 'background-color: #c8e6c9; color: #2e7d32; font-weight: bold;'
                 return styles
 
-            df_final = df_exibicao.style.apply(aplicar_estilo, axis=1)
+            # Aplicação da formatação condicional de valores e estilo
+            df_final = df_exibicao.style.apply(aplicar_estilo_mestre, axis=1)
+
+            for col_idx in cols_percent:
+                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "pct"), 
+                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+
+            for col_idx in cols_valor:
+                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "val"), 
+                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+
             st.dataframe(df_final, use_container_width=True, hide_index=True)
+            # --- FIM DA PARTE AJUSTADA ---
 
             # Resumo de Viabilidade
+            meses_positivos = 0
+            v_necessaria, p_equilibrio = 0.0, 0.0
+            if "RES" in indices:
+                row_res = df_dre_raw.iloc[indices["RES"]]
+                for i in range(3, len(row_res)):
+                    if clean_numeric(row_res[i]) > 0: meses_positivos += 1
+                if len(row_res) > 30:
+                    v_necessaria = clean_numeric(row_res[29])
+                    p_equilibrio = clean_numeric(row_res[30])
+
             r1, r2, r3 = st.columns(3)
             r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
             r2.success(f"**Venda Alvo Sugerida:** R$ {v_necessaria:,.2f}")
             r3.warning(f"**Ponto de Equilíbrio:** R$ {p_equilibrio:,.2f}")
-            
             st.markdown("---")
 
         except Exception as e:
