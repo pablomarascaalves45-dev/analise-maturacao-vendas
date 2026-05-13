@@ -229,8 +229,6 @@ if arquivos_dre:
             st.subheader("DRE Detalhado")
             df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
 
-            # Identificação das colunas de Valor e Percentual baseadas na imagem image_3bae1b.png
-            # Colunas de valor costumam ser as ímpares (3, 5, 7...) e percentuais as pares (4, 6, 8...) após o cabeçalho
             cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
             cols_percent = [i for i in range(2, len(df_exibicao.columns), 2) if i not in cols_valor]
 
@@ -250,7 +248,6 @@ if arquivos_dre:
                             styles[i] = 'background-color: #c8e6c9; color: #2e7d32; font-weight: bold;'
                 return styles
 
-            # Aplicação da formatação condicional de valores e estilo
             df_final = df_exibicao.style.apply(aplicar_estilo_mestre, axis=1)
 
             for col_idx in cols_percent:
@@ -269,8 +266,12 @@ if arquivos_dre:
             v_necessaria, p_equilibrio = 0.0, 0.0
             if "RES" in indices:
                 row_res = df_dre_raw.iloc[indices["RES"]]
-                for i in range(3, len(row_res)):
-                    if clean_numeric(row_res[i]) > 0: meses_positivos += 1
+                # AJUSTE SOLICITADO: Pula de 2 em 2 colunas para contar apenas as colunas de Valor (R$)
+                # Começa em 3 (primeiro valor R$), depois 5, 7, etc. Ignorando as colunas 4, 6, 8 (Percentuais)
+                for i in range(3, len(row_res), 2):
+                    if clean_numeric(row_res[i]) > 0: 
+                        meses_positivos += 1
+                
                 if len(row_res) > 30:
                     v_necessaria = clean_numeric(row_res[29])
                     p_equilibrio = clean_numeric(row_res[30])
