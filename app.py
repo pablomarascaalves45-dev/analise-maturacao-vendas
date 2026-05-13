@@ -254,9 +254,9 @@ if arquivos_dre:
                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            # --- AJUSTE SOLICITADO: INVERSÃO DE NOMENCLATURAS ---
+            # --- AJUSTE: CÁLCULOS DE PONTO DE EQUILÍBRIO E VENDA ALVO SUGERIDA ---
             meses_positivos = 0
-            v_necessaria, p_equilibrio = 0.0, 0.0
+            p_equilibrio, v_alvo_sugerida = 0.0, 0.0
             
             if "RES" in indices:
                 row_res = df_dre_raw.iloc[indices["RES"]]
@@ -267,33 +267,35 @@ if arquivos_dre:
                 try:
                     # Faturamento atual (Receita Líquida) na coluna índice 29
                     faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
-                    
-                    # CMV % na linha CMV, coluna índice 30
-                    cmv_perc = abs(clean_numeric(df_dre_raw.iloc[indices["CMV"], 30]))
-                    if cmv_perc > 1: cmv_perc = cmv_perc / 100
-                    
-                    # Resultado (Prejuízo) na linha Resultado Operacional, coluna índice 29
+                    # Resultado (Lucro/Prejuízo) na linha Resultado Operacional, coluna índice 29
                     resultado_atual = clean_numeric(row_res[29])
                     
-                    # Margem de Contribuição % = 100% - CMV%
-                    margem_cont_perc = 1 - cmv_perc
+                    # 1. Cálculo do Ponto de Equilíbrio (Considera CMV Real do arquivo)
+                    cmv_perc_real = abs(clean_numeric(df_dre_raw.iloc[indices["CMV"], 30]))
+                    if cmv_perc_real > 1: cmv_perc_real = cmv_perc_real / 100
+                    margem_cont_real = 1 - cmv_perc_real
                     
-                    if margem_cont_perc > 0:
-                        # Cálculo que agora será chamado de Ponto de Equilíbrio
-                        v_necessaria = faturamento_atual + (abs(resultado_atual) / margem_cont_perc)
+                    if margem_cont_real > 0:
+                        p_equilibrio = faturamento_atual + (abs(resultado_atual) / margem_cont_real)
                     else:
-                        v_necessaria = 0.0
+                        p_equilibrio = 0.0
 
-                    if len(row_res) > 30:
-                        p_equilibrio = clean_numeric(row_res[30])
+                    # 2. Cálculo da Venda Alvo Sugerida (Considera SEMPRE 65% de CMV - Meta Empresa)
+                    cmv_meta = 0.65
+                    margem_meta = 1 - cmv_meta # Resulta em 0.35 (35%)
+                    
+                    if margem_meta > 0:
+                        v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / margem_meta)
+                    else:
+                        v_alvo_sugerida = 0.0
                 except:
-                    v_necessaria = 0.0
+                    p_equilibrio = 0.0
+                    v_alvo_sugerida = 0.0
 
             r1, r2, r3 = st.columns(3)
             r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
-            # Inversão aplicada abaixo conforme solicitado
-            r2.success(f"**Ponto de Equilíbrio:** R$ {v_necessaria:,.2f}")
-            r3.warning(f"**Venda Alvo Sugerida:** R$ {p_equilibrio:,.2f}")
+            r2.success(f"**Ponto de Equilíbrio:** R$ {p_equilibrio:,.2f}")
+            r3.warning(f"**Venda Alvo Sugerida:** R$ {v_alvo_sugerida:,.2f}")
             st.markdown("---")
 
         except Exception as e:
