@@ -2,10 +2,6 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 import io
-import plotly.io as pio
-from fpdf import FPDF
-import tempfile
-import os
 
 # 1. CONFIGURAÇÃO DO DASHBOARD
 st.set_page_config(page_title="Gestão de Maturação, DRE e Performance", layout="wide")
@@ -46,33 +42,6 @@ def load_data_negativas(file):
                 if df[col].abs().mean() < 1.0:
                     df[col] = df[col] * 100
     return df
-
-# --- FUNÇÃO PARA GERAR PDF ---
-def export_pdf(figs, titles):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    
-    for fig, title in zip(figs, titles):
-        pdf.add_page()
-        pdf.set_font("Arial", 'B', 16)
-        pdf.cell(0, 10, title, ln=True, align='C')
-        
-        # Salva o gráfico Plotly como imagem temporária
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
-            pio.write_image(fig, tmpfile.name, format="png", width=800, height=500)
-            pdf.image(tmpfile.name, x=10, y=30, w=190)
-            tmp_path = tmpfile.name
-        
-        # Remove arquivo temporário após uso
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-            
-    return pdf.output(dest='S').encode('latin-1')
-
-# Inicializa lista de gráficos para o PDF no estado da sessão
-if 'figs_to_export' not in st.session_state:
-    st.session_state.figs_to_export = []
-    st.session_state.titles_to_export = []
 
 # 2. PROJEÇÃO DE CRESCIMENTO (SEÇÃO 1)
 st.sidebar.header("1. Parâmetros de Projeção")
@@ -128,16 +97,12 @@ if arquivo_subido is not None:
 
             c1, c2 = st.columns([2, 1])
             with c1:
-                fig_mat = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
-                                 title=f"Curva de Maturação Esperada - {estado_sel}",
-                                 template="plotly_white", color_discrete_sequence=["#00CC96"])
-                fig_mat.update_layout(xaxis=dict(tickmode='array', tickvals=meses_grafico), yaxis_tickformat="R$,.2f")
-                fig_mat.add_hline(y=valor_estudo, line_dash="dash", line_color="red", annotation_text="Meta 100%")
-                st.plotly_chart(fig_mat, use_container_width=True)
-                
-                # Adiciona ao PDF
-                st.session_state.figs_to_export.append(fig_mat)
-                st.session_state.titles_to_export.append(f"Maturacao - {estado_sel}")
+                fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
+                             title=f"Curva de Maturação Esperada - {estado_sel}",
+                             template="plotly_white", color_discrete_sequence=["#00CC96"])
+                fig.update_layout(xaxis=dict(tickmode='array', tickvals=meses_grafico), yaxis_tickformat="R$,.2f")
+                fig.add_hline(y=valor_estudo, line_dash="dash", line_color="red", annotation_text="Meta 100%")
+                st.plotly_chart(fig, use_container_width=True)
                 
             with c2:
                 st.subheader("Tabela de Evolução")
@@ -202,10 +167,6 @@ if arquivo_historico is not None:
             fig_hist.add_scatter(x=df_loja['Mes_PT'], y=df_loja['Crescimento_Esperado'], mode='lines+markers', name='Projeção Teórica', line=dict(color='orange', width=3))
             fig_hist.update_traces(marker_color='#3366CC', textposition='outside', selector=dict(type='bar'))
             st.plotly_chart(fig_hist, use_container_width=True)
-            
-            st.session_state.figs_to_export.append(fig_hist)
-            st.session_state.titles_to_export.append(f"Comparativo Real - {filial_sel}")
-
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
@@ -245,8 +206,6 @@ if arquivo_negativas:
                              color='RO Mês', color_continuous_scale='Reds_r')
             fig_neg.update_layout(yaxis={'categoryorder':'total ascending'})
             st.plotly_chart(fig_neg, use_container_width=True)
-            st.session_state.figs_to_export.append(fig_neg)
-            st.session_state.titles_to_export.append("Unidades Criticas Mensais")
 
         with col_graf2:
             st.subheader("Aluguel vs Resultado (Mês)")
@@ -255,10 +214,7 @@ if arquivo_negativas:
                                   color='Diretor', title="Impacto do Aluguel no RO Mensal")
             fig_scat.update_layout(xaxis_ticksuffix="%")
             st.plotly_chart(fig_scat, use_container_width=True)
-            st.session_state.figs_to_export.append(fig_scat)
-            st.session_state.titles_to_export.append("Impacto Aluguel")
 
-        # ... (Mantendo os outros gráficos de Lojas Negativas)
         st.markdown("---")
         col_graf3, col_graf4 = st.columns(2)
         with col_graf3:
@@ -268,8 +224,6 @@ if arquivo_negativas:
                                   color='RO Acum', color_continuous_scale='Reds_r')
             fig_neg_acum.update_layout(yaxis={'categoryorder':'total ascending'})
             st.plotly_chart(fig_neg_acum, use_container_width=True)
-            st.session_state.figs_to_export.append(fig_neg_acum)
-            st.session_state.titles_to_export.append("Unidades Criticas Acumuladas")
 
         with col_graf4:
             st.subheader("Aluguel vs Resultado (Acumulado)")
@@ -278,8 +232,6 @@ if arquivo_negativas:
                                        color='Diretor', title="Impacto do Aluguel no RO Acumulado")
             fig_scat_acum.update_layout(xaxis_ticksuffix="%")
             st.plotly_chart(fig_scat_acum, use_container_width=True)
-            st.session_state.figs_to_export.append(fig_scat_acum)
-            st.session_state.titles_to_export.append("Aluguel vs RO Acumulado")
 
         # RANKINGS DE CUSTO
         st.markdown("---")
@@ -291,8 +243,6 @@ if arquivo_negativas:
                                  color='Aluguel Mês', color_continuous_scale='Blues')
             fig_aluguel.update_layout(yaxis={'categoryorder':'total ascending'})
             st.plotly_chart(fig_aluguel, use_container_width=True)
-            st.session_state.figs_to_export.append(fig_aluguel)
-            st.session_state.titles_to_export.append("Top Alugueis")
 
         with col_rank2:
             st.subheader("Top 10 Maiores Multas")
@@ -302,8 +252,8 @@ if arquivo_negativas:
                                    color='Multa rescisória atual', color_continuous_scale='Oranges')
                 fig_multa.update_layout(yaxis={'categoryorder':'total ascending'})
                 st.plotly_chart(fig_multa, use_container_width=True)
-                st.session_state.figs_to_export.append(fig_multa)
-                st.session_state.titles_to_export.append("Top Multas")
+            else:
+                st.info("Aguardando dados de multa rescisória.")
 
         # CRUZAMENTO DE DADOS
         st.markdown("---")
@@ -335,6 +285,8 @@ if arquivo_negativas:
 
     except Exception as e:
         st.error(f"Erro ao processar lojas negativas: {e}")
+else:
+    st.info("Faça o upload do arquivo de Lojas Negativas para ativar esta seção.")
 
 # 4. ANÁLISE FINANCEIRA (DRE) (SEÇÃO 4)
 st.markdown("---")
@@ -405,12 +357,8 @@ if arquivos_dre:
                     "Conta": ["Folha", "ADM", "Operação", "Quebra"],
                     "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
                 })
-                fig_pie = px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title=f"Distribuição de Custos - {arquivo_dre.name}")
-                st.plotly_chart(fig_pie, use_container_width=True)
-                st.session_state.figs_to_export.append(fig_pie)
-                st.session_state.titles_to_export.append(f"DRE Pie - {arquivo_dre.name}")
+                st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title=f"Distribuição de Custos"), use_container_width=True)
 
-            # ... (Resto do processamento de DRE mantido idêntico)
             st.subheader("DRE Detalhado")
             df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
             cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
@@ -435,30 +383,47 @@ if arquivos_dre:
             df_final = df_exibicao.style.apply(aplicar_estilo_mestre, axis=1)
             for col_idx in cols_percent:
                 df_final = df_final.format(lambda x: formatar_estilo_celula(x, "pct"), 
-                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             for col_idx in cols_valor:
                 df_final = df_final.format(lambda x: formatar_estilo_celula(x, "val"), 
-                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            # ... (Lógica de equilíbrio e sugestão de venda mantida)
-            # (Mantido código original até o st.markdown("---"))
+            meses_positivos = 0
+            p_equilibrio, v_alvo_sugerida = 0.0, 0.0
+            cmv_exibicao_formatado = 0.0
+            
+            if "RES" in indices:
+                row_res = df_dre_raw.iloc[indices["RES"]]
+                for i in range(3, len(row_res), 2):
+                    if clean_numeric(row_res[i]) > 0: 
+                        meses_positivos += 1
+                
+                try:
+                    faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
+                    resultado_atual = clean_numeric(row_res[29])
+                    cmv_bruto = clean_numeric(df_dre_raw.iloc[indices["CMV"], 30])
+                    cmv_para_calculo = abs(cmv_bruto)
+                    if cmv_para_calculo > 1: 
+                        cmv_para_calculo = cmv_para_calculo / 100
+                    
+                    cmv_exibicao_formatado = cmv_para_calculo * 100
+                    margem_cont_real = 1 - cmv_para_calculo
+                    
+                    if margem_cont_real > 0:
+                        p_equilibrio = faturamento_atual + (abs(resultado_atual) / margem_cont_real)
+                    else:
+                        p_equilibrio = 0.0
+
+                    v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / 0.35)
+                except:
+                    p_equilibrio, v_alvo_sugerida = 0.0, 0.0
+
+            r1, r2, r3 = st.columns(3)
+            r1.info(f"Histórico Positivo: {meses_positivos} meses")
+            r2.success(f"Ponto de Equilíbrio CMV {cmv_exibicao_formatado:.0f}%: R$ {p_equilibrio:,.2f}")
+            r3.warning(f"Venda Alvo Sugerida CMV 65%: R$ {v_alvo_sugerida:,.2f}")
+            st.markdown("---")
 
         except Exception as e:
             st.error(f"Erro ao processar {arquivo_dre.name}: {e}")
-
-# --- BOTÃO FINAL DE EXPORTAÇÃO ---
-st.sidebar.markdown("---")
-st.sidebar.header("5. Exportação")
-if st.sidebar.button("Gerar Relatório PDF"):
-    if st.session_state.figs_to_export:
-        with st.spinner("Gerando PDF..."):
-            pdf_bytes = export_pdf(st.session_state.figs_to_export, st.session_state.titles_to_export)
-            st.sidebar.download_button(
-                label="Baixar Relatório",
-                data=pdf_bytes,
-                file_name="relatorio_performance.pdf",
-                mime="application/pdf"
-            )
-    else:
-        st.sidebar.warning("Nenhum gráfico gerado para exportar.")
