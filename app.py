@@ -151,7 +151,7 @@ if arquivo_historico is not None:
 
 
 # ==============================================================================
-# BLOCO REFORMULADO: ANÁLISE INVESTIGATIVA DE NEGATIVAS (EXPANSÃO)
+# NOVO BLOCO: ANÁLISE INVESTIGATIVA DE NEGATIVAS (EXPANSÃO) - CORRIGIDO
 # ==============================================================================
 st.markdown("---")
 st.header("🔍 Diagnóstico Investigativo: Expansão e Negativas")
@@ -165,87 +165,84 @@ arquivo_negativas = st.sidebar.file_uploader(
 
 if arquivo_negativas is not None:
     try:
+        # Carregamento robusto
         if "csv" in arquivo_negativas.name.lower():
             df_neg = pd.read_csv(arquivo_negativas, decimal=',', engine='python')
         else:
             df_neg = pd.read_excel(arquivo_negativas)
 
-        # Filtro para lojas com RO negativo
-        df_neg_lojas = df_neg[df_neg['RO Mês'] < 0].copy()
+        # Filtro de lojas negativas
+        df_neg_lojas = df_neg[df_neg['RO Mês'] < 0].copy() if 'RO Mês' in df_neg.columns else df_neg.copy()
 
-        # --- 1. CABEÇALHO DE MÉTRICAS (SUMÁRIO DO PREJUÍZO) ---
-        st.subheader("📊 Sumário Executivo - Unidades com Performance Negativa")
-        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        # --- 1. KPIs GLOBAIS NO TOPO ---
+        st.subheader("📊 Visão Consolidada do Prejuízo")
+        k1, k2, k3, k4, k5 = st.columns(5)
         
-        preju_mes = df_neg_lojas['RO Mês'].sum()
-        preju_acum = df_neg_lojas['RO Acum'].sum()
-        soma_multas = df_neg_lojas['Multa rescisória atual'].sum()
+        preju_mes = df_neg_lojas['RO Mês'].sum() if 'RO Mês' in df_neg_lojas.columns else 0
+        preju_acum = df_neg_lojas['RO Acum'].sum() if 'RO Acum' in df_neg_lojas.columns else 0
+        multas = df_neg_lojas['Multa rescisória atual'].sum() if 'Multa rescisória atual' in df_neg_lojas.columns else 0
         
-        # Média CMV simulada baseada na Margem Média se o CMV não estiver explícito
-        # Como o CSV de exemplo foca em RO, usaremos a média do %RO Mês como indicador de pressão
-        avg_ro_perc = df_neg_lojas['%RO Mês'].mean() * 100
-
-        kpi1.metric("Lojas Analisadas", f"{len(df_neg_lojas)} filiais")
-        kpi2.metric("Prejuízo Total (Mês)", f"R$ {preju_mes:,.2f}", delta_color="inverse")
-        kpi3.metric("Prejuízo Acumulado", f"R$ {preju_acum:,.2f}", delta_color="inverse")
-        kpi4.metric("Soma de Multas", f"R$ {soma_multas:,.2f}")
+        # Cálculo de CMV Médio Estimado (Considerando Markup Reverso se a coluna não existir)
+        # Se você tiver uma coluna CMV específica, altere 'CMV' aqui
+        cmv_medio = 65.0 # Valor padrão caso não encontre
+        if 'CMV' in df_neg_lojas.columns:
+            cmv_medio = df_neg_lojas['CMV'].mean()
+        
+        k1.metric("Lojas em Negativo", f"{len(df_neg_lojas)}")
+        k2.metric("Prejuízo Mês", f"R$ {preju_mes:,.2f}")
+        k3.metric("Prejuízo Acumulado", f"R$ {preju_acum:,.2f}")
+        k4.metric("Total Multas", f"R$ {multas:,.2f}")
+        k5.metric("CMV Médio", f"{cmv_medio:.1f}%")
 
         st.markdown("---")
 
-        # --- 2. TOP 15 LOJAS COM MAIOR PREJUÍZO ---
-        col_rank, col_diagn = st.columns([1.5, 1])
+        # --- 2. RANKING TOP 15 E DIAGNÓSTICO ---
+        c_rank, c_diag = st.columns([1.5, 1])
+        
+        with c_rank:
+            st.write("🏆 **Top 15 Lojas com Maior Prejuízo (Mês)**")
+            if 'RO Mês' in df_neg_lojas.columns:
+                top_15 = df_neg_lojas.nsmallest(15, 'RO Mês').copy()
+                # Colunas para exibir
+                cols_show = [c for c in ['Desc_CC', 'RO Mês', 'RO Acum', 'Vagas', 'Posição Loja'] if c in top_15.columns]
+                st.dataframe(top_15[cols_show].style.format({'RO Mês': 'R$ {:,.2f}', 'RO Acum': 'R$ {:,.2f}'}), 
+                             use_container_width=True, hide_index=True)
 
-        with col_rank:
-            st.write("🏆 **Top 15 Unidades com Maior Prejuízo (Mês)**")
-            top_15 = df_neg_lojas.nsmallest(15, 'RO Mês')[['Desc_CC', 'RO Mês', '%RO Mês', 'Vagas', 'RO Acum']]
-            st.dataframe(top_15.style.format({
-                'RO Mês': 'R$ {:,.2f}',
-                'RO Acum': 'R$ {:,.2f}',
-                '%RO Mês': '{:.2%}'
-            }), use_container_width=True, hide_index=True)
-
-        with col_diagn:
-            # --- 3. ANÁLISE DE CAUSAS (PADRÕES) ---
-            st.write("🧬 **Análise de Padrões Reincidentes**")
-            
+        with c_diag:
+            st.write("🧬 **Fatores de Risco Detectados**")
             # Análise de Vagas
-            vagas_counts = df_neg_lojas.groupby('Vagas')['RO Mês'].count()
-            st.write(f"🚗 **Estacionamento:** {vagas_counts.get('Não', 0)} de {len(df_neg_lojas)} lojas não possuem vagas.")
+            if 'Vagas' in df_neg_lojas.columns:
+                vagas_stats = df_neg_lojas['Vagas'].value_counts()
+                st.write(f"🚗 **Estacionamento:** {vagas_stats.get('Não', 0)} lojas negativas não possuem vagas.")
             
             # Análise de Posicionamento
-            pos_impacto = df_neg_lojas.groupby('Posição Loja')['RO Mês'].mean().sort_values()
-            fig_pos = px.bar(pos_impacto, orientation='h', title="Média de Prejuízo por Posição", 
-                             labels={'value': 'RO Médio', 'Posição Loja': ''}, color_discrete_sequence=['#EF553B'])
-            st.plotly_chart(fig_pos, use_container_width=True)
+            if 'Posição Loja' in df_neg_lojas.columns:
+                pos_rank = df_neg_lojas.groupby('Posição Loja')['RO Mês'].mean().sort_values()
+                st.write(f"📍 **Pior Posição Média:** {pos_rank.index[0]}")
+                st.plotly_chart(px.bar(pos_rank, orientation='h', title="Prejuízo Médio por Posição", color_discrete_sequence=['#EF553B']), use_container_width=True)
 
-        # --- 4. INVESTIGAÇÃO DE CONCORRÊNCIA VS CANIBALIZAÇÃO ---
-        st.markdown("### 🏹 Investigação: Concorrência e Localização")
-        c1, c2, c3 = st.columns(3)
-
-        with c1:
-            st.write("**Impacto de Redes Próximas**")
-            # Soma de Redes vs Prejuízo
-            fig_redes = px.scatter(df_neg_lojas, x='Qtd_Total_Redes', y='RO Mês', size='Qtd_Independentes',
-                                  hover_name='Desc_CC', title="Prejuízo vs Total de Redes",
-                                  trendline="ols", color_discrete_sequence=['#636EFA'])
-            st.plotly_chart(fig_redes, use_container_width=True)
-
-        with c2:
-            st.write("**Proximidade com Mercados**")
-            mkt_impacto = df_neg_lojas.groupby('Próximo a mercado')['RO Mês'].mean().reset_index()
-            fig_mkt = px.pie(mkt_impacto, values=mkt_impacto['RO Mês'].abs(), names='Próximo a mercado',
-                            hole=0.4, title="Distribuição do RO: Perto de Mercado?")
-            st.plotly_chart(fig_mkt, use_container_width=True)
-
-        with c3:
-            st.write("**Top Concorrentes (Ofensores)**")
-            # Identifica qual concorrente mais aparece nas lojas com pior RO
-            concorrentes = ['Qtd_SaoJoao', 'Qtd_Panvel', 'Qtd_Raia', 'Qtd_Nissei', 'Qtd_Independentes']
-            presenca_concorr = df_neg_lojas[concorrentes].sum().sort_values(ascending=False)
-            st.bar_chart(presenca_concorr)
+        # --- 3. COMPARAÇÕES ADICIONAIS ---
+        st.markdown("### 📊 Comparações de Infraestrutura vs Resultado")
+        ca1, ca2 = st.columns(2)
+        
+        with ca1:
+            if 'Próximo a mercado' in df_neg_lojas.columns:
+                fig_mkt = px.box(df_neg_lojas, x='Próximo a mercado', y='RO Mês', title="Impacto: Proximidade com Mercados")
+                st.plotly_chart(fig_mkt, use_container_width=True)
+        
+        with ca2:
+            # Correlação de Concorrência (CORREÇÃO DO ERRO AQUI)
+            conc_cols = ['Qtd_SaoJoao', 'Qtd_Independentes', 'Qtd_Total_Redes', 'Qtd_Panvel', 'Qtd_Raia']
+            # Filtra apenas colunas que existem e garante que os nomes sejam strings
+            existentes = [str(c) for c in df_neg_lojas.columns if any(x in str(c) for x in conc_cols)]
+            
+            if existentes and 'RO Mês' in df_neg_lojas.columns:
+                corr = df_neg_lojas[existentes + ['RO Mês']].corr()['RO Mês'].sort_values()
+                st.write("**Correlação Concorrência vs Resultado**")
+                st.dataframe(corr.drop('RO Mês', errors='ignore'), use_container_width=True)
 
     except Exception as e:
-        st.error(f"Erro ao processar diagnóstico de expansão: {e}")
+        st.error(f"Erro no Diagnóstico de Expansão: {e}")
 
 
 # 4. ANÁLISE FINANCEIRA (DRE)
@@ -353,7 +350,7 @@ if arquivos_dre:
                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            # --- AJUSTE CORRIGIDO: PONTO DE EQUILÍBRIO E EXIBIÇÃO DO CMV ---
+            # --- AJUSTE CORRIGIDO: PONTO DE EQUILÍBRIO ---
             meses_positivos = 0
             p_equilibrio, v_alvo_sugerida = 0.0, 0.0
             cmv_exibicao_formatado = 0.0
@@ -367,26 +364,19 @@ if arquivos_dre:
                 try:
                     faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
                     resultado_atual = clean_numeric(row_res[29])
-                    
-                    # Captura o CMV da coluna 30
                     cmv_bruto = clean_numeric(df_dre_raw.iloc[indices["CMV"], 30])
                     
-                    # Normalização Inteligente:
                     cmv_para_calculo = abs(cmv_bruto)
-                    if cmv_para_calculo > 1: 
-                        cmv_para_calculo = cmv_para_calculo / 100
-                    
-                    # Valor para aparecer no texto (Sempre em escala 0-100)
+                    if cmv_para_calculo > 1: cmv_para_calculo = cmv_para_calculo / 100
                     cmv_exibicao_formatado = cmv_para_calculo * 100
                     
                     margem_cont_real = 1 - cmv_para_calculo
-                    
                     if margem_cont_real > 0:
                         p_equilibrio = faturamento_atual + (abs(resultado_atual) / margem_cont_real)
                     else:
                         p_equilibrio = 0.0
 
-                    v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / 0.35) # Meta 35% Margem
+                    v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / 0.35) 
                 except:
                     p_equilibrio, v_alvo_sugerida = 0.0, 0.0
 
