@@ -353,7 +353,7 @@ if arquivos_dre:
                     r1, r2, r3 = st.columns(3)
                     r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
                     r2.success(f"**Ponto de Equilíbrio (CMV {cmv_at*100:.0f}%):** R$ {p_eq:,.2f}")
-                    r3.warning(f"**Venda Alvo (Margem 35%):** R$ {v_alvo:,.2f}")
+                    r3.warning(f"**Venda Alvo (Margem 65%):** R$ {v_alvo:,.2f}")
                 except: pass
             st.markdown("---")
         except Exception as e:
