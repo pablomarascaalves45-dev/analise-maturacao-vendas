@@ -57,7 +57,7 @@ if uploaded_file:
         c2.metric("Prejuízo Acumulado", f"R$ {total_prejuizo_acum:,.2f}")
         c3.metric("Média % Aluguel", f"{media_aluguel_perc:.2f}%")
 
-        # --- ANÁLISE GRÁFICA ---
+        # --- ANÁLISE GRÁFICA (MÊS) ---
         col_graf1, col_graf2 = st.columns(2)
         
         with col_graf1:
@@ -69,15 +69,35 @@ if uploaded_file:
             st.plotly_chart(fig_neg, use_container_width=True)
 
         with col_graf2:
-            st.subheader("Aluguel vs Resultado")
+            st.subheader("Aluguel vs Resultado (Mês)")
             fig_scat = px.scatter(df, x='%Aluguel Mês', y='RO Mês', 
                                   hover_name='Desc_CC', size='Aluguel Mês',
-                                  color='Diretor', title="Impacto do Aluguel no RO")
+                                  color='Diretor', title="Impacto do Aluguel no RO Mensal")
             
-            # Ajuste do sufixo no eixo X do gráfico para mostrar %
             fig_scat.update_layout(xaxis_ticksuffix="%")
-            
             st.plotly_chart(fig_scat, use_container_width=True)
+
+        st.markdown("---")
+        
+        # --- ANÁLISE GRÁFICA (ACUMULADO) ---
+        col_graf3, col_graf4 = st.columns(2)
+
+        with col_graf3:
+            st.subheader("Top 10 Unidades Críticas (Acumulado)")
+            top_negativas_acum = df.nsmallest(10, 'RO Acum')
+            fig_neg_acum = px.bar(top_negativas_acum, x='RO Acum', y='Desc_CC', orientation='h',
+                                  color='RO Acum', color_continuous_scale='Reds_r')
+            fig_neg_acum.update_layout(yaxis={'categoryorder':'total ascending'})
+            st.plotly_chart(fig_neg_acum, use_container_width=True)
+
+        with col_graf4:
+            st.subheader("Aluguel vs Resultado (Acumulado)")
+            fig_scat_acum = px.scatter(df, x='%Aluguel Mês', y='RO Acum', 
+                                       hover_name='Desc_CC', size='Aluguel Mês',
+                                       color='Diretor', title="Impacto do Aluguel no RO Acumulado")
+            
+            fig_scat_acum.update_layout(xaxis_ticksuffix="%")
+            st.plotly_chart(fig_scat_acum, use_container_width=True)
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
