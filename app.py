@@ -151,10 +151,10 @@ if arquivo_historico is not None:
 
 
 # ==============================================================================
-# NOVO BLOCO: ANÁLISE INVESTIGATIVA DE NEGATIVAS (EXPANSÃO)
+# BLOCO REFORMULADO: ANÁLISE INVESTIGATIVA DE NEGATIVAS (EXPANSÃO)
 # ==============================================================================
 st.markdown("---")
-st.header("🔍 Diagnóstico Investigativo: Análise de Negativas")
+st.header("🔍 Diagnóstico Investigativo: Expansão e Negativas")
 st.sidebar.header("2.5. Expansão e Negativas")
 
 arquivo_negativas = st.sidebar.file_uploader(
@@ -165,78 +165,87 @@ arquivo_negativas = st.sidebar.file_uploader(
 
 if arquivo_negativas is not None:
     try:
-        # Carregamento do arquivo de negativas
         if "csv" in arquivo_negativas.name.lower():
             df_neg = pd.read_csv(arquivo_negativas, decimal=',', engine='python')
         else:
             df_neg = pd.read_excel(arquivo_negativas)
 
-        # 1. Filtro Investigativo (Focar em unidades com RO Negativo)
-        df_analise = df_neg[df_neg['RO Mês'] < 0].copy() if 'RO Mês' in df_neg.columns else df_neg.copy()
+        # Filtro para lojas com RO negativo
+        df_neg_lojas = df_neg[df_neg['RO Mês'] < 0].copy()
+
+        # --- 1. CABEÇALHO DE MÉTRICAS (SUMÁRIO DO PREJUÍZO) ---
+        st.subheader("📊 Sumário Executivo - Unidades com Performance Negativa")
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         
-        st.subheader("Padrões de Performance Insatisfatória")
+        preju_mes = df_neg_lojas['RO Mês'].sum()
+        preju_acum = df_neg_lojas['RO Acum'].sum()
+        soma_multas = df_neg_lojas['Multa rescisória atual'].sum()
         
-        # 2. Correlação entre Concorrência e Resultado Operacional
-        cols_concorrência = [
-            'Qtd_SaoJoao', 'Qtd_Independentes', 'Qtd_Total_Redes', 'Qtd_Panvel', 
-            'Qtd_Raia', 'Qtd_Morifarma', 'Qtd_Nissei', 'Qtd_PPCatarinense', 
-            'Qtd_Pacheco', 'Qtd_FarmTrabalhador'
-        ]
-        cols_presentes = [c for c in cols_concorrência if c in df_analise.columns]
-        
-        if 'RO Mês' in df_analise.columns and cols_presentes:
-            # Calculando correlação (quão mais concorrência, menor o RO?)
-            corr_data = df_analise[cols_presentes + ['RO Mês']].corr()['RO Mês'].sort_values()
+        # Média CMV simulada baseada na Margem Média se o CMV não estiver explícito
+        # Como o CSV de exemplo foca em RO, usaremos a média do %RO Mês como indicador de pressão
+        avg_ro_perc = df_neg_lojas['%RO Mês'].mean() * 100
+
+        kpi1.metric("Lojas Analisadas", f"{len(df_neg_lojas)} filiais")
+        kpi2.metric("Prejuízo Total (Mês)", f"R$ {preju_mes:,.2f}", delta_color="inverse")
+        kpi3.metric("Prejuízo Acumulado", f"R$ {preju_acum:,.2f}", delta_color="inverse")
+        kpi4.metric("Soma de Multas", f"R$ {soma_multas:,.2f}")
+
+        st.markdown("---")
+
+        # --- 2. TOP 15 LOJAS COM MAIOR PREJUÍZO ---
+        col_rank, col_diagn = st.columns([1.5, 1])
+
+        with col_rank:
+            st.write("🏆 **Top 15 Unidades com Maior Prejuízo (Mês)**")
+            top_15 = df_neg_lojas.nsmallest(15, 'RO Mês')[['Desc_CC', 'RO Mês', '%RO Mês', 'Vagas', 'RO Acum']]
+            st.dataframe(top_15.style.format({
+                'RO Mês': 'R$ {:,.2f}',
+                'RO Acum': 'R$ {:,.2f}',
+                '%RO Mês': '{:.2%}'
+            }), use_container_width=True, hide_index=True)
+
+        with col_diagn:
+            # --- 3. ANÁLISE DE CAUSAS (PADRÕES) ---
+            st.write("🧬 **Análise de Padrões Reincidentes**")
             
-            c_invest1, c_invest2 = st.columns(2)
+            # Análise de Vagas
+            vagas_counts = df_neg_lojas.groupby('Vagas')['RO Mês'].count()
+            st.write(f"🚗 **Estacionamento:** {vagas_counts.get('Não', 0)} de {len(df_neg_lojas)} lojas não possuem vagas.")
             
-            with c_invest1:
-                st.write("**Impacto da Concorrência no Resultado**")
-                st.info("Valores negativos indicam que a presença desse concorrente reduz o RO.")
-                st.dataframe(corr_data.drop('RO Mês', errors='ignore').rename("Correlação com RO"))
+            # Análise de Posicionamento
+            pos_impacto = df_neg_lojas.groupby('Posição Loja')['RO Mês'].mean().sort_values()
+            fig_pos = px.bar(pos_impacto, orientation='h', title="Média de Prejuízo por Posição", 
+                             labels={'value': 'RO Médio', 'Posição Loja': ''}, color_discrete_sequence=['#EF553B'])
+            st.plotly_chart(fig_pos, use_container_width=True)
 
-            with c_invest2:
-                # 3. Análise de Vagas e Infraestrutura
-                if 'Vagas' in df_analise.columns:
-                    st.write("**Performance: Com Vagas vs Sem Vagas**")
-                    ro_vagas = df_analise.groupby('Vagas')['RO Mês'].mean().reset_index()
-                    fig_vagas = px.bar(ro_vagas, x='Vagas', y='RO Mês', color='Vagas', 
-                                     title="Média de RO por Disponibilidade de Vagas")
-                    st.plotly_chart(fig_vagas, use_container_width=True)
+        # --- 4. INVESTIGAÇÃO DE CONCORRÊNCIA VS CANIBALIZAÇÃO ---
+        st.markdown("### 🏹 Investigação: Concorrência e Localização")
+        c1, c2, c3 = st.columns(3)
 
-        # 4. Diagnóstico Detalhado por Coluna
-        st.markdown("### 📋 Diagnóstico de Especialista")
-        
-        obs = []
-        # Investigação de Vagas
-        if 'Vagas' in df_analise.columns:
-            sem_vagas = df_analise[df_analise['Vagas'] == 'Não']
-            if not sem_vagas.empty:
-                perc_vagas = (len(sem_vagas) / len(df_analise)) * 100
-                obs.append(f"🚩 **Fator Conveniência:** {perc_vagas:.1f}% das unidades negativas **NÃO possuem vagas** de estacionamento.")
+        with c1:
+            st.write("**Impacto de Redes Próximas**")
+            # Soma de Redes vs Prejuízo
+            fig_redes = px.scatter(df_neg_lojas, x='Qtd_Total_Redes', y='RO Mês', size='Qtd_Independentes',
+                                  hover_name='Desc_CC', title="Prejuízo vs Total de Redes",
+                                  trendline="ols", color_discrete_sequence=['#636EFA'])
+            st.plotly_chart(fig_redes, use_container_width=True)
 
-        # Investigação de Concorrência
-        if not corr_data.empty:
-            ofensor = corr_data.idxmin()
-            obs.append(f"⚔️ **Canibalização/Redes:** A presença de concorrentes do tipo **{ofensor}** possui a maior correlação estatística com o prejuízo atual.")
+        with c2:
+            st.write("**Proximidade com Mercados**")
+            mkt_impacto = df_neg_lojas.groupby('Próximo a mercado')['RO Mês'].mean().reset_index()
+            fig_mkt = px.pie(mkt_impacto, values=mkt_impacto['RO Mês'].abs(), names='Próximo a mercado',
+                            hole=0.4, title="Distribuição do RO: Perto de Mercado?")
+            st.plotly_chart(fig_mkt, use_container_width=True)
 
-        # Investigação de Posição
-        if 'Posição Loja' in df_analise.columns:
-            pos_critica = df_analise.groupby('Posição Loja')['RO Mês'].mean().idxmin()
-            obs.append(f"📍 **Geomarketing:** Lojas em posição **{pos_critica}** apresentam os piores desempenhos médios acumulados.")
-
-        # Investigação de Próximo a Mercado
-        if 'Próximo a mercado' in df_analise.columns:
-            perto_mkt = df_analise[df_analise['Próximo a mercado'] == 'Sim']['RO Mês'].mean()
-            longe_mkt = df_analise[df_analise['Próximo a mercado'] == 'Não']['RO Mês'].mean()
-            if perto_mkt < longe_mkt:
-                obs.append("🛒 **Proximidade Alimentar:** Estar próximo a mercados está gerando maior pressão de margem ou custo fixo nestas unidades.")
-
-        for item in obs:
-            st.write(item)
+        with c3:
+            st.write("**Top Concorrentes (Ofensores)**")
+            # Identifica qual concorrente mais aparece nas lojas com pior RO
+            concorrentes = ['Qtd_SaoJoao', 'Qtd_Panvel', 'Qtd_Raia', 'Qtd_Nissei', 'Qtd_Independentes']
+            presenca_concorr = df_neg_lojas[concorrentes].sum().sort_values(ascending=False)
+            st.bar_chart(presenca_concorr)
 
     except Exception as e:
-        st.error(f"Erro ao processar planilha de expansão: {e}")
+        st.error(f"Erro ao processar diagnóstico de expansão: {e}")
 
 
 # 4. ANÁLISE FINANCEIRA (DRE)
