@@ -108,7 +108,7 @@ if arquivo_subido is not None:
         st.error(f"Erro na seção 1: {e}")
 
 # ==============================================================================
-# 2. DIAGNÓSTICO DE EXPANSÃO (NEGATIVAS) - BLOCO ROBUSTO
+# 2. DIAGNÓSTICO DE EXPANSÃO (NEGATIVAS) - AJUSTE PARA ERRO DE TIPO/ITERADOR
 # ==============================================================================
 st.markdown("---")
 st.header("2. Diagnóstico Investigativo: Expansão e Negativas")
@@ -128,18 +128,23 @@ if arquivo_negativas is not None:
         else:
             df_neg = pd.read_excel(arquivo_negativas)
 
-        # TRATAMENTO DE COLUNAS: Garante que nomes nulos não quebrem o código
+        # AJUSTE: Força todos os nomes de colunas a serem strings para evitar TypeError
         df_neg.columns = [str(c) for c in df_neg.columns]
         
-        # Filtro de lojas com RO Negativo
-        col_ro = 'RO Mês' if 'RO Mês' in df_neg.columns else df_neg.columns[5]
+        # Filtro de lojas com RO Negativo (Usa nome fixo ou posição segura)
+        col_ro = 'RO Mês' if 'RO Mês' in df_neg.columns else (df_neg.columns[5] if len(df_neg.columns) > 5 else df_neg.columns[-1])
+        
+        # Garante que a coluna de RO seja tratada como número antes de filtrar
+        df_neg[col_ro] = pd.to_numeric(df_neg[col_ro], errors='coerce').fillna(0)
         df_neg_lojas = df_neg[df_neg[col_ro] < 0].copy()
 
         # --- MÉTRICAS DE IMPACTO ---
         k1, k2, k3, k4 = st.columns(4)
         preju_total = df_neg_lojas[col_ro].sum()
-        preju_acum = df_neg_lojas['RO Acum'].sum() if 'RO Acum' in df_neg_lojas.columns else 0
-        multas = df_neg_lojas['Multa rescisória atual'].sum() if 'Multa rescisória atual' in df_neg_lojas.columns else 0
+        
+        # Uso de pd.to_numeric para evitar erros em colunas vazias
+        preju_acum = pd.to_numeric(df_neg_lojas['RO Acum'], errors='coerce').sum() if 'RO Acum' in df_neg_lojas.columns else 0
+        multas = pd.to_numeric(df_neg_lojas['Multa rescisória atual'], errors='coerce').sum() if 'Multa rescisória atual' in df_neg_lojas.columns else 0
         
         k1.metric("Lojas em Déficit", f"{len(df_neg_lojas)} filiais")
         k2.metric("Prejuízo do Mês", f"R$ {preju_total:,.2f}", delta_color="inverse")
@@ -148,23 +153,24 @@ if arquivo_negativas is not None:
 
         st.markdown("---")
         
-        # --- ANÁLISE DE CONCORRÊNCIA E FATORES ---
+        # --- ANÁLISE DE CONCORRÊNCIA ---
         col_graf1, col_graf2 = st.columns(2)
 
         with col_graf1:
             st.write("**📡 Densidade Competitiva vs. Resultado**")
             if 'Qtd_Total_Redes' in df_neg_lojas.columns:
                 fig_redes = px.scatter(df_neg_lojas, x='Qtd_Total_Redes', y=col_ro,
-                                      hover_name='Desc_CC', trendline="ols",
+                                      hover_name='Desc_CC' if 'Desc_CC' in df_neg_lojas.columns else None, 
+                                      trendline="ols",
                                       title="Impacto do nº de Concorrentes no RO")
                 st.plotly_chart(fig_redes, use_container_width=True)
 
         with col_graf2:
-            st.write("**🏆 Top 10 Redes Concorrentes nas Proximidades**")
-            # Filtra colunas que começam com Qtd_ e soma a presença
-            col_conc = [c for c in df_neg_lojas.columns if "Qtd_" in c and "Total" not in c]
+            st.write("**🏆 Top 10 Redes Concorrentes**")
+            # AJUSTE: cast de 'c' para string na lista de compreensão
+            col_conc = [c for c in df_neg_lojas.columns if "Qtd_" in str(c) and "Total" not in str(c)]
             if col_conc:
-                soma_conc = df_neg_lojas[col_conc].sum().sort_values(ascending=False).head(10)
+                soma_conc = df_neg_lojas[col_conc].apply(pd.to_numeric, errors='coerce').sum().sort_values(ascending=False).head(10)
                 fig_bar_conc = px.bar(soma_conc, orientation='h', color_discrete_sequence=['#EF553B'])
                 fig_bar_conc.update_layout(showlegend=False, xaxis_title="Total de Lojas Próximas", yaxis_title="")
                 st.plotly_chart(fig_bar_conc, use_container_width=True)
@@ -172,7 +178,7 @@ if arquivo_negativas is not None:
         # --- TABELA DE PRIORIZAÇÃO ---
         st.write("**📋 Detalhamento Estratégico (Top Negativas)**")
         cols_view = [c for c in ['Desc_CC', col_ro, '%RO Mês', 'Vagas', 'Posição Loja', 'Próximo a mercado'] if c in df_neg_lojas.columns]
-        st.dataframe(df_neg_lojas[cols_view].sort_values(by=col_ro).style.format({col_ro: 'R$ {:,.2f}', '%RO Mês': '{:.2%}'}), use_container_width=True)
+        st.dataframe(df_neg_lojas[cols_view].sort_values(by=col_ro), use_container_width=True)
 
     except Exception as e:
         st.error(f"Erro na seção 2: {e}")
