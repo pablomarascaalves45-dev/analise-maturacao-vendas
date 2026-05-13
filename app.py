@@ -97,34 +97,44 @@ if uploaded_file:
             fig_scat_acum.update_layout(xaxis_ticksuffix="%")
             st.plotly_chart(fig_scat_acum, use_container_width=True)
 
-        # --- COMPARAÇÃO DE REPETIÇÃO (INSIGHT) ---
+        # --- COMPARAÇÃO DE REPETIÇÃO ---
         st.markdown("---")
-        st.subheader("🎯 Cruzamento de Dados: Unidades Críticas Recorrentes")
+        st.subheader("Cruzamento de Dados: Unidades Críticas Recorrentes")
         
         lojas_mes = set(top_negativas['Desc_CC'])
         lojas_acum = set(top_negativas_acum['Desc_CC'])
         lojas_repetidas = lojas_mes.intersection(lojas_acum)
         
         if lojas_repetidas:
-            st.warning(f"Identificamos {len(lojas_repetidas)} lojas que estão no Top 10 tanto do Mês quanto do Acumulado:")
+            st.info(f"Lojas presentes no Top 10 (Mês e Acumulado): {len(lojas_repetidas)}")
             
-            # Ajuste dinâmico de colunas
-            cols = st.columns(3) # Fixado em 3 para acomodar melhor o texto detalhado
+            cols = st.columns(2) 
             for i, loja in enumerate(sorted(lojas_repetidas)):
-                # Busca os dados específicos dessa loja no dataframe
                 dados_loja = df[df['Desc_CC'] == loja].iloc[0]
+                
+                # Coleta de informações adicionais
+                abertura = dados_loja['Inauguração']
+                # Formata data se for do tipo datetime
+                if isinstance(abertura, pd.Timestamp):
+                    abertura = abertura.strftime('%d/%m/%Y')
+                
                 ro_mes = dados_loja['RO Mês']
                 ro_acum = dados_loja['RO Acum']
+                aluguel = dados_loja['Aluguel Mês']
+                multa = dados_loja.get('Multa rescisória atual', 0)
                 
-                # Exibição formatada dentro do balão
-                with cols[i % 3]:
-                    st.info(f"""
+                with cols[i % 2]:
+                    st.write(f"""
                     **{loja}**
-                    * RO Mês: R$ {ro_mes:,.2f}
-                    * RO Acum: R$ {ro_acum:,.2f}
+                    - Data de Abertura: {abertura}
+                    - RO Mês: R$ {ro_mes:,.2f}
+                    - RO Acum: R$ {ro_acum:,.2f}
+                    - Aluguel: R$ {aluguel:,.2f}
+                    - Multa: R$ {multa:,.2f}
                     """)
+                    st.markdown("---")
         else:
-            st.success("Não há lojas repetidas entre os dois rankings de criticidade.")
+            st.write("Não há recorrência de lojas entre os rankings selecionados.")
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
