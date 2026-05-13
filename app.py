@@ -27,7 +27,7 @@ def clean_numeric(val):
 st.sidebar.header("1. Dados de Projeção")
 arquivo_subido = st.sidebar.file_uploader(
     "Upload da planilha de Taxas de Crescimento:", 
-    type=["xlsx", "xls", "csv"],
+    type=["xlsx", "xls", "csv"], 
     key="proj_file"
 )
 
@@ -115,7 +115,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("2. Dados Históricos")
 arquivo_historico = st.sidebar.file_uploader(
     "Upload da planilha de Vendas Realizadas (12 Meses):", 
-    type=["xlsx", "xls", "csv"],
+    type=["xlsx", "xls", "csv"], 
     key="hist_file"
 )
 
@@ -239,122 +239,131 @@ st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 st.sidebar.markdown("---")
 st.sidebar.header("4. Dados Financeiros (DRE)")
-arquivo_dre = st.sidebar.file_uploader("Upload da planilha de DRE:", type=["xlsx", "xls", "csv"], key="dre_file")
 
-if arquivo_dre is not None:
-    try:
-        df_dre_raw = pd.read_excel(arquivo_dre, header=None)
-        termos = {
-            "RB": "Receita Bruta", "RL": "Receita Líquida", "MC": "Margem de Contribuição",
-            "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque",
-            "FOLHA": "Despesas Folha", "ADM": "Despesas ADM", "OPER": "Despesas Operação",
-            "RES": "Resultado Operacional", "CMV": "CMV"
-        }
-        indices = {}
-        for chave, texto in termos.items():
-            match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(texto, case=False, na=False)]
-            if not match.empty: indices[chave] = match.index[0]
+# AJUSTE REALIZADO AQUI: accept_multiple_files=True para permitir vários anexos
+arquivos_dre = st.sidebar.file_uploader(
+    "Upload da planilha de DRE:", 
+    type=["xlsx", "xls", "csv"], 
+    key="dre_file",
+    accept_multiple_files=True
+)
 
-        def pegar_v(chave):
-            if chave in indices:
-                val = df_dre_raw.iloc[indices[chave], 3] 
-                return clean_numeric(val)
-            return 0.0
+if arquivos_dre:
+    # Laço para processar cada arquivo da lista
+    for arquivo_dre in arquivos_dre:
+        try:
+            st.markdown(f"### 📄 Arquivo: {arquivo_dre.name}")
+            df_dre_raw = pd.read_excel(arquivo_dre, header=None)
+            termos = {
+                "RB": "Receita Bruta", "RL": "Receita Líquida", "MC": "Margem de Contribuição",
+                "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque",
+                "FOLHA": "Despesas Folha", "ADM": "Despesas ADM", "OPER": "Despesas Operação",
+                "RES": "Resultado Operacional", "CMV": "CMV"
+            }
+            indices = {}
+            for chave, texto in termos.items():
+                match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(texto, case=False, na=False)]
+                if not match.empty: indices[chave] = match.index[0]
 
-        vals = {k: pegar_v(k) for k in termos.keys()}
-        receita_base = vals['RL'] if vals['RL'] > 0 else (vals['RB'] if vals['RB'] > 0 else 1.0)
-        perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
+            def pegar_v(chave):
+                if chave in indices:
+                    val = df_dre_raw.iloc[indices[chave], 3] 
+                    return clean_numeric(val)
+                return 0.0
 
-        c1, c2, c3, c4, c5 = st.columns(5) 
-        c1.metric("Receita Líquida", f"R$ {vals['RL']:,.2f}")
-        c2.metric("Margem Contrib.", f"R$ {vals['MC']:,.2f}")
-        c3.metric("Resultado Oper.", f"R$ {vals['RES']:,.2f}", delta_color="normal" if vals['RES'] >= 0 else "inverse")
-        c4.metric("Perdas/Discrep.", f"R$ {perdas_totais:,.2f}")
-        perc_cmv = (abs(vals['CMV']) / receita_base) * 100
-        c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{perc_cmv:.1f}%")
+            vals = {k: pegar_v(k) for k in termos.keys()}
+            receita_base = vals['RL'] if vals['RL'] > 0 else (vals['RB'] if vals['RB'] > 0 else 1.0)
+            perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
 
-        st.subheader("Análise de Performance Operacional")
-        col_diag, col_graf = st.columns([1, 1])
-        with col_diag:
-            st.write("**Alertas de Indicadores:**")
-            perc_margem = (vals['MC'] / receita_base) * 100
-            perc_perda = (perdas_totais / receita_base) * 100
-            if vals['RES'] < 0: st.error(f"🔴 Déficit operacional de R$ {abs(vals['RES']):,.2f}")
-            if perc_margem < 35: st.warning(f"⚠️ Margem Baixa: {perc_margem:.2f}% (Meta: 35%)")
-            if perc_perda > 1.5: st.warning(f"⚠️ Quebra Elevada: {perc_perda:.2f}% (Meta: 0,66%)")
+            c1, c2, c3, c4, c5 = st.columns(5) 
+            c1.metric("Receita Líquida", f"R$ {vals['RL']:,.2f}")
+            c2.metric("Margem Contrib.", f"R$ {vals['MC']:,.2f}")
+            c3.metric("Resultado Oper.", f"R$ {vals['RES']:,.2f}", delta_color="normal" if vals['RES'] >= 0 else "inverse")
+            c4.metric("Perdas/Discrep.", f"R$ {perdas_totais:,.2f}")
+            perc_cmv = (abs(vals['CMV']) / receita_base) * 100
+            c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{perc_cmv:.1f}%")
 
-        with col_graf:
-            df_gastos = pd.DataFrame({
-                "Conta": ["Folha", "ADM", "Operação", "Quebra"],
-                "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
-            })
-            st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Composição de Gastos"), use_container_width=True)
+            st.subheader(f"Análise de Performance Operacional - {arquivo_dre.name}")
+            col_diag, col_graf = st.columns([1, 1])
+            with col_diag:
+                st.write("**Alertas de Indicadores:**")
+                perc_margem = (vals['MC'] / receita_base) * 100
+                perc_perda = (perdas_totais / receita_base) * 100
+                if vals['RES'] < 0: st.error(f"🔴 Déficit operacional de R$ {abs(vals['RES']):,.2f}")
+                if perc_margem < 35: st.warning(f"⚠️ Margem Baixa: {perc_margem:.2f}% (Meta: 35%)")
+                if perc_perda > 1.5: st.warning(f"⚠️ Quebra Elevada: {perc_perda:.2f}% (Meta: 0,66%)")
 
-        st.subheader("Tabela de Dados Financeiros Detalhada")
-        df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
-        
-        # --- AJUSTE NA LÓGICA DE CONTAGEM ---
-        meses_positivos = 0
-        venda_necessaria_idx29 = 0.0
-        ponto_equilibrio_idx30 = 0.0
-        
-        if "RES" in indices:
-            row_res = df_dre_raw.iloc[indices["RES"]]
-            # Inicia em 3 (primeira coluna de valores) e percorre as colunas
-            for i in range(3, len(row_res)):
-                valor_bruto = row_res[i]
-                # Valida se a célula não é vazia, não é apenas um traço e se o número limpo é positivo
-                if pd.notna(valor_bruto) and str(valor_bruto).strip() not in ["", "-", "0", "0.0"]:
-                    num_limpo = clean_numeric(valor_bruto)
-                    if num_limpo > 0:
-                        meses_positivos += 1
+            with col_graf:
+                df_gastos = pd.DataFrame({
+                    "Conta": ["Folha", "ADM", "Operação", "Quebra"],
+                    "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
+                })
+                st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title=f"Composição de Gastos ({arquivo_dre.name})"), use_container_width=True)
+
+            st.subheader("Tabela de Dados Financeiros Detalhada")
+            df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
             
-            if len(row_res) > 30:
-                venda_necessaria_idx29 = clean_numeric(row_res[29])
-                ponto_equilibrio_idx30 = clean_numeric(row_res[30])
-
-        def estilo_com_realce(row):
-            styles = [''] * len(row)
-            texto = str(row.iloc[1]).upper()
-            if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
-                styles = ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
-            if "RESULTADO OPERACIONAL" in texto:
-                for i in range(3, len(row)):
-                    val = clean_numeric(row.iloc[i])
-                    if val > 0:
-                        styles[i] = 'background-color: #c8e6c9; font-weight: bold; color: #2e7d32;'
-            return styles
-
-        cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
-        cols_percent = [i for i in range(2, len(df_exibicao.columns), 2)]
-        
-        def formatar_valor(val, tipo):
-            num = clean_numeric(val)
-            if num == 0 and (val == "" or val == "-"): return val
-            return f"{num:.2f}%" if tipo == "pct" else f"R$ {num:,.2f}"
-
-        df_final = df_exibicao.style.apply(estilo_com_realce, axis=1)
-        for col_idx in cols_percent:
-            df_final = df_final.format(lambda x: formatar_valor(x, "pct"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
-        for col_idx in cols_valor:
-            df_final = df_final.format(lambda x: formatar_valor(x, "val"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
-
-        st.dataframe(df_final, use_container_width=True, hide_index=True)
-
-        st.markdown("### 📋 Relatório de Diagnóstico Financeiro")
-        r1, r2, r3 = st.columns(3)
-        with r1:
-            st.info(f"**Meses no Azul:** {meses_positivos} meses")
-        with r2:
-            st.success(f"**Venda Necessária (Média):** R$ {venda_necessaria_idx29:,.2f}")
-        with r3:
-            st.warning(f"**Ponto de Equilíbrio:** R$ {ponto_equilibrio_idx30:,.2f}")
+            meses_positivos = 0
+            venda_necessaria_idx29 = 0.0
+            ponto_equilibrio_idx30 = 0.0
             
-        if meses_positivos >= 6:
-            st.write("✅ **Análise:** A unidade apresenta consistência operacional positiva no semestre.")
-        elif meses_positivos > 0:
-            st.write("⚠️ **Análise:** Operação oscilante. Requer atenção ao Ponto de Equilíbrio para estabilização.")
-        else:
-            st.write("🚨 **Análise:** Unidade em déficit crítico. Faturamento atual abaixo da Venda Necessária.")
+            if "RES" in indices:
+                row_res = df_dre_raw.iloc[indices["RES"]]
+                for i in range(3, len(row_res)):
+                    valor_bruto = row_res[i]
+                    if pd.notna(valor_bruto) and str(valor_bruto).strip() not in ["", "-", "0", "0.0"]:
+                        num_limpo = clean_numeric(valor_bruto)
+                        if num_limpo > 0:
+                            meses_positivos += 1
+                
+                if len(row_res) > 30:
+                    venda_necessaria_idx29 = clean_numeric(row_res[29])
+                    ponto_equilibrio_idx30 = clean_numeric(row_res[30])
 
-    except Exception as e: st.error(f"Erro no DRE: {e}")
+            def estilo_com_realce(row):
+                styles = [''] * len(row)
+                texto = str(row.iloc[1]).upper()
+                if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
+                    styles = ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
+                if "RESULTADO OPERACIONAL" in texto:
+                    for i in range(3, len(row)):
+                        val = clean_numeric(row.iloc[i])
+                        if val > 0:
+                            styles[i] = 'background-color: #c8e6c9; font-weight: bold; color: #2e7d32;'
+                return styles
+
+            cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
+            cols_percent = [i for i in range(2, len(df_exibicao.columns), 2)]
+            
+            def formatar_valor(val, tipo):
+                num = clean_numeric(val)
+                if num == 0 and (val == "" or val == "-"): return val
+                return f"{num:.2f}%" if tipo == "pct" else f"R$ {num:,.2f}"
+
+            df_final = df_exibicao.style.apply(estilo_com_realce, axis=1)
+            for col_idx in cols_percent:
+                df_final = df_final.format(lambda x: formatar_valor(x, "pct"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+            for col_idx in cols_valor:
+                df_final = df_final.format(lambda x: formatar_valor(x, "val"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+
+            st.dataframe(df_final, use_container_width=True, hide_index=True)
+
+            st.markdown(f"#### 📋 Diagnóstico Financeiro: {arquivo_dre.name}")
+            r1, r2, r3 = st.columns(3)
+            with r1:
+                st.info(f"**Meses no Azul:** {meses_positivos} meses")
+            with r2:
+                st.success(f"**Venda Necessária (Média):** R$ {venda_necessaria_idx29:,.2f}")
+            with r3:
+                st.warning(f"**Ponto de Equilíbrio:** R$ {ponto_equilibrio_idx30:,.2f}")
+                
+            if meses_positivos >= 6:
+                st.write("✅ **Análise:** A unidade apresenta consistência operacional positiva no semestre.")
+            elif meses_positivos > 0:
+                st.write("⚠️ **Análise:** Operação oscilante. Requer atenção ao Ponto de Equilíbrio para estabilização.")
+            else:
+                st.write("🚨 **Análise:** Unidade em déficit crítico. Faturamento atual abaixo da Venda Necessária.")
+            
+            st.markdown("---") # Linha para separar relatórios de arquivos diferentes
+
+        except Exception as e: st.error(f"Erro no DRE ({arquivo_dre.name}): {e}")
