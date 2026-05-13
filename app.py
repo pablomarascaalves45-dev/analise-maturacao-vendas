@@ -13,10 +13,10 @@ st.markdown("---")
 def load_data(file):
     df = pd.read_excel(file)
     
-    # Padroniza nomes das colunas removendo espaços extras
+    # Padroniza nomes das colunas removendo espaços extras (evita KeyError)
     df.columns = df.columns.str.strip()
     
-    # Lista de colunas financeiras para garantir que sejam float
+    # Lista atualizada incluindo a coluna de Multa para limpeza
     cols_financeiras = ['RO Mês', 'RO Acum', 'Aluguel Mês', '%RO Mês', '%RO Acum', '%Aluguel Mês', 'Multa rescisória atual']
     
     for col in cols_financeiras:
@@ -28,9 +28,10 @@ def load_data(file):
                            .str.replace('.', '', regex=False)
                            .str.replace(',', '.', regex=False)
                            .strip())
+            # Converte para numérico e remove valores nulos/erros
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
-            # AJUSTE: Se o valor for decimal (ex: 0.04), converte para percentual inteiro (4.0)
+            # Ajuste de percentuais
             if col.startswith('%'):
                 if df[col].abs().mean() < 1.0:
                     df[col] = df[col] * 100
@@ -138,12 +139,13 @@ if uploaded_file:
         else:
             st.write("Não há recorrência de lojas entre os rankings selecionados.")
 
-        # --- NOVO: RANKING DE CUSTOS (ALUGUEL E MULTA) ---
+        # --- RANKING DE CUSTOS (ALUGUEL E MULTA) ---
         st.markdown("---")
         c_aluguel, c_multa = st.columns(2)
 
         with c_aluguel:
             st.subheader("Top 10 Aluguéis Mais Altos")
+            # Usa nlargest para pegar os 10 maiores
             top_10_aluguel = df.nlargest(10, 'Aluguel Mês')
             fig_top_aluguel = px.bar(top_10_aluguel, x='Aluguel Mês', y='Desc_CC', orientation='h',
                                      color='Aluguel Mês', color_continuous_scale='Viridis')
