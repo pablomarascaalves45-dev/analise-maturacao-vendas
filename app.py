@@ -29,7 +29,6 @@ def load_data(file):
             
             # AJUSTE SOLICITADO: Se o valor for decimal (ex: 0.04), converte para percentual inteiro (4.0)
             if col.startswith('%'):
-                # Verifica se a média da coluna é pequena, indicando formato decimal
                 if df[col].abs().mean() < 1.0:
                     df[col] = df[col] * 100
             
@@ -46,14 +45,14 @@ if uploaded_file:
         # --- DASHBOARD DE MÉTRICAS ---
         total_prejuizo_mes = df['RO Mês'].sum()
         total_prejuizo_acum = df['RO Acum'].sum()
-        qtd_lojas = len(df) # Contagem das lojas analisadas
-        
-        # Como o ajuste já foi feito no load_data, pegamos a média direta
+        qtd_lojas = len(df) 
         media_aluguel_perc = df['%Aluguel Mês'].mean()
 
-        c1, c2, c3 = st.columns(3)
-        # Ajuste no rótulo para mostrar a quantidade de lojas
-        c1.metric(f"Prejuízo Total Mês ({qtd_lojas} lojas)", f"R$ {total_prejuizo_mes:,.2f}")
+        # AJUSTE: Criado 4 colunas para dar evidência à quantidade de lojas
+        c0, c1, c2, c3 = st.columns(4)
+        
+        c0.metric("Lojas Analisadas", f"{qtd_lojas}")
+        c1.metric("Prejuízo Total Mês", f"R$ {total_prejuizo_mes:,.2f}")
         c2.metric("Prejuízo Acumulado", f"R$ {total_prejuizo_acum:,.2f}")
         c3.metric("Média % Aluguel", f"{media_aluguel_perc:.2f}%")
 
@@ -103,7 +102,6 @@ if uploaded_file:
         st.markdown("---")
         st.subheader("🎯 Cruzamento de Dados: Unidades Críticas Recorrentes")
         
-        # Identificando as lojas que se repetem nos dois Top 10
         lojas_mes = set(top_negativas['Desc_CC'])
         lojas_acum = set(top_negativas_acum['Desc_CC'])
         lojas_repetidas = lojas_mes.intersection(lojas_acum)
