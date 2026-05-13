@@ -3,11 +3,10 @@ import plotly.express as px
 import streamlit as st
 import io
 
-# 1. CONFIGURAÇÃO DO DASHBOARD
+# ==============================================================================
+# CONFIGURAÇÃO E UTILITÁRIOS
+# ==============================================================================
 st.set_page_config(page_title="Gestão de Maturação e DRE", layout="wide")
-
-st.title("Sistema de Análise: Expansão e Performance")
-st.markdown("---")
 
 def clean_numeric(val):
     if pd.isna(val) or val == "" or val == "-" or val == " ":
@@ -22,7 +21,13 @@ def clean_numeric(val):
     except:
         return 0.0
 
-# 2. PROJEÇÃO DE CRESCIMENTO
+st.title("Sistema de Análise: Expansão e Performance")
+st.markdown("---")
+
+# ==============================================================================
+# 1. PROJEÇÃO DE CRESCIMENTO (MATURAÇÃO)
+# ==============================================================================
+st.header("1. Projeção de Maturação")
 st.sidebar.header("1. Parâmetros de Projeção")
 arquivo_subido = st.sidebar.file_uploader(
     "Taxas de Crescimento:", 
@@ -99,13 +104,85 @@ if arquivo_subido is not None:
             atingiu = df_res[df_res["% Maturação"] >= 100]
             mes_mat = atingiu["Mês"].iloc[0] if not atingiu.empty else "N/A"
             m3.metric("Tempo para 100%", f"{mes_mat} Meses")
+    except Exception as e:
+        st.error(f"Erro na seção 1: {e}")
+
+# ==============================================================================
+# 2. DIAGNÓSTICO DE EXPANSÃO (NEGATIVAS) - BLOCO ROBUSTO
+# ==============================================================================
+st.markdown("---")
+st.header("2. Diagnóstico Investigativo: Expansão e Negativas")
+st.sidebar.header("2. Expansão e Negativas")
+
+arquivo_negativas = st.sidebar.file_uploader(
+    "Planilha de Negativas (Expansão):", 
+    type=["xlsx", "xls", "csv"], 
+    key="neg_file_v2"
+)
+
+if arquivo_negativas is not None:
+    try:
+        # Carregamento inteligente
+        if "csv" in arquivo_negativas.name.lower():
+            df_neg = pd.read_csv(arquivo_negativas, decimal=',', engine='python')
+        else:
+            df_neg = pd.read_excel(arquivo_negativas)
+
+        # TRATAMENTO DE COLUNAS: Garante que nomes nulos não quebrem o código
+        df_neg.columns = [str(c) for c in df_neg.columns]
+        
+        # Filtro de lojas com RO Negativo
+        col_ro = 'RO Mês' if 'RO Mês' in df_neg.columns else df_neg.columns[5]
+        df_neg_lojas = df_neg[df_neg[col_ro] < 0].copy()
+
+        # --- MÉTRICAS DE IMPACTO ---
+        k1, k2, k3, k4 = st.columns(4)
+        preju_total = df_neg_lojas[col_ro].sum()
+        preju_acum = df_neg_lojas['RO Acum'].sum() if 'RO Acum' in df_neg_lojas.columns else 0
+        multas = df_neg_lojas['Multa rescisória atual'].sum() if 'Multa rescisória atual' in df_neg_lojas.columns else 0
+        
+        k1.metric("Lojas em Déficit", f"{len(df_neg_lojas)} filiais")
+        k2.metric("Prejuízo do Mês", f"R$ {preju_total:,.2f}", delta_color="inverse")
+        k3.metric("Prejuízo Acumulado", f"R$ {preju_acum:,.2f}", delta_color="inverse")
+        k4.metric("Risco em Multas", f"R$ {multas:,.2f}")
+
+        st.markdown("---")
+        
+        # --- ANÁLISE DE CONCORRÊNCIA E FATORES ---
+        col_graf1, col_graf2 = st.columns(2)
+
+        with col_graf1:
+            st.write("**📡 Densidade Competitiva vs. Resultado**")
+            if 'Qtd_Total_Redes' in df_neg_lojas.columns:
+                fig_redes = px.scatter(df_neg_lojas, x='Qtd_Total_Redes', y=col_ro,
+                                      hover_name='Desc_CC', trendline="ols",
+                                      title="Impacto do nº de Concorrentes no RO")
+                st.plotly_chart(fig_redes, use_container_width=True)
+
+        with col_graf2:
+            st.write("**🏆 Top 10 Redes Concorrentes nas Proximidades**")
+            # Filtra colunas que começam com Qtd_ e soma a presença
+            col_conc = [c for c in df_neg_lojas.columns if "Qtd_" in c and "Total" not in c]
+            if col_conc:
+                soma_conc = df_neg_lojas[col_conc].sum().sort_values(ascending=False).head(10)
+                fig_bar_conc = px.bar(soma_conc, orientation='h', color_discrete_sequence=['#EF553B'])
+                fig_bar_conc.update_layout(showlegend=False, xaxis_title="Total de Lojas Próximas", yaxis_title="")
+                st.plotly_chart(fig_bar_conc, use_container_width=True)
+
+        # --- TABELA DE PRIORIZAÇÃO ---
+        st.write("**📋 Detalhamento Estratégico (Top Negativas)**")
+        cols_view = [c for c in ['Desc_CC', col_ro, '%RO Mês', 'Vagas', 'Posição Loja', 'Próximo a mercado'] if c in df_neg_lojas.columns]
+        st.dataframe(df_neg_lojas[cols_view].sort_values(by=col_ro).style.format({col_ro: 'R$ {:,.2f}', '%RO Mês': '{:.2%}'}), use_container_width=True)
 
     except Exception as e:
-        st.error(f"Erro no processamento da projeção: {e}")
+        st.error(f"Erro na seção 2: {e}")
 
-# 3. COMPARATIVO REAL
+# ==============================================================================
+# 3. COMPARATIVO HISTÓRICO REAL
+# ==============================================================================
 st.markdown("---")
-st.sidebar.header("2. Dados Históricos")
+st.header("3. Comparativo Realizado vs. Projetado")
+st.sidebar.header("3. Dados Históricos")
 arquivo_historico = st.sidebar.file_uploader(
     "Histórico de Vendas Realizadas:", 
     type=["xlsx", "xls", "csv"], 
@@ -118,7 +195,7 @@ if arquivo_historico is not None:
 
         if 'Desc_Filial' in df_hist.columns:
             filiais = sorted(df_hist['Desc_Filial'].unique())
-            filial_sel = st.selectbox("Filial para comparação:", filiais)
+            filial_sel = st.selectbox("Selecione a Filial:", filiais)
             df_lo_ja = df_hist[df_hist['Desc_Filial'] == filial_sel].copy().sort_values(by='AnoMes')
             
             venda_inicial_real = df_lo_ja['Mercadoria'].iloc[0]
@@ -147,109 +224,14 @@ if arquivo_historico is not None:
             fig_hist.update_traces(marker_color='#3366CC', textposition='outside', selector=dict(type='bar'))
             st.plotly_chart(fig_hist, use_container_width=True)
     except Exception as e:
-        st.error(f"Erro no histórico: {e}")
+        st.error(f"Erro na seção 3: {e}")
 
 # ==============================================================================
-# BLOCO AJUSTADO: ANÁLISE INVESTIGATIVA DE NEGATIVAS (EXPANSÃO)
-# ==============================================================================
-st.markdown("---")
-st.header("🔍 Diagnóstico Investigativo: Expansão e Negativas")
-st.sidebar.header("2.5. Expansão e Negativas")
-
-arquivo_negativas = st.sidebar.file_uploader(
-    "Planilha de Negativas (Expansão):", 
-    type=["xlsx", "xls", "csv"], 
-    key="neg_file"
-)
-
-if arquivo_negativas is not None:
-    try:
-        if "csv" in arquivo_negativas.name.lower():
-            df_neg = pd.read_csv(arquivo_negativas, decimal=',', engine='python')
-        else:
-            df_neg = pd.read_excel(arquivo_negativas)
-
-        # AJUSTE PARA EVITAR O ERRO: Converte todos os nomes de colunas para string
-        df_neg.columns = [str(c) for c in df_neg.columns]
-
-        # Filtro para lojas com RO negativo
-        df_neg_lojas = df_neg[df_neg['RO Mês'] < 0].copy()
-
-        # --- 1. CABEÇALHO DE MÉTRICAS (SUMÁRIO DO PREJUÍZO) ---
-        st.subheader("📊 Sumário Executivo - Unidades com Performance Negativa")
-        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        
-        preju_mes = df_neg_lojas['RO Mês'].sum()
-        preju_acum = df_neg_lojas['RO Acum'].sum() if 'RO Acum' in df_neg_lojas.columns else 0
-        soma_multas = df_neg_lojas['Multa rescisória atual'].sum() if 'Multa rescisória atual' in df_neg_lojas.columns else 0
-
-        kpi1.metric("Lojas Analisadas", f"{len(df_neg_lojas)} filiais")
-        kpi2.metric("Prejuízo Total (Mês)", f"R$ {preju_mes:,.2f}", delta_color="inverse")
-        kpi3.metric("Prejuízo Acumulado", f"R$ {preju_acum:,.2f}", delta_color="inverse")
-        kpi4.metric("Soma de Multas", f"R$ {soma_multas:,.2f}")
-
-        st.markdown("---")
-
-        # --- 2. TOP 15 LOJAS COM MAIOR PREJUÍZO ---
-        col_rank, col_diagn = st.columns([1.5, 1])
-
-        with col_rank:
-            st.write("🏆 **Top 15 Unidades com Maior Prejuízo (Mês)**")
-            top_15 = df_neg_lojas.nsmallest(15, 'RO Mês')[['Desc_CC', 'RO Mês', '%RO Mês', 'Vagas', 'RO Acum']]
-            st.dataframe(top_15.style.format({
-                'RO Mês': 'R$ {:,.2f}',
-                'RO Acum': 'R$ {:,.2f}',
-                '%RO Mês': '{:.2%}'
-            }), use_container_width=True, hide_index=True)
-
-        with col_diagn:
-            st.write("🧬 **Análise de Padrões Reincidentes**")
-            
-            if 'Vagas' in df_neg_lojas.columns:
-                vagas_counts = df_neg_lojas['Vagas'].value_counts()
-                st.write(f"🚗 **Estacionamento:** {vagas_counts.get('Não', 0)} de {len(df_neg_lojas)} lojas não possuem vagas.")
-            
-            if 'Posição Loja' in df_neg_lojas.columns:
-                pos_impacto = df_neg_lojas.groupby('Posição Loja')['RO Mês'].mean().sort_values()
-                fig_pos = px.bar(pos_impacto, orientation='h', title="Média de Prejuízo por Posição", 
-                                 labels={'value': 'RO Médio', 'Posição Loja': ''}, color_discrete_sequence=['#EF553B'])
-                st.plotly_chart(fig_pos, use_container_width=True)
-
-        # --- 4. INVESTIGAÇÃO DE CONCORRÊNCIA VS CANIBALIZAÇÃO ---
-        st.markdown("### 🏹 Investigação: Concorrência e Localização")
-        c1, c2, c3 = st.columns(3)
-
-        with c1:
-            st.write("**Impacto de Redes Próximas**")
-            if 'Qtd_Total_Redes' in df_neg_lojas.columns:
-                fig_redes = px.scatter(df_neg_lojas, x='Qtd_Total_Redes', y='RO Mês',
-                                      hover_name='Desc_CC', title="Prejuízo vs Total de Redes",
-                                      trendline="ols", color_discrete_sequence=['#636EFA'])
-                st.plotly_chart(fig_redes, use_container_width=True)
-
-        with c2:
-            st.write("**Proximidade com Mercados**")
-            if 'Próximo a mercado' in df_neg_lojas.columns:
-                mkt_impacto = df_neg_lojas.groupby('Próximo a mercado')['RO Mês'].mean().reset_index()
-                fig_mkt = px.pie(mkt_impacto, values=mkt_impacto['RO Mês'].abs(), names='Próximo a mercado',
-                                hole=0.4, title="Distribuição do RO: Perto de Mercado?")
-                st.plotly_chart(fig_mkt, use_container_width=True)
-
-        with c3:
-            st.write("**Top Concorrentes (Ofensores)**")
-            # AJUSTE PARA FILTRAGEM: Busca apenas colunas que contenham "Qtd_" e garante que são strings
-            concorrentes = [c for c in df_neg_lojas.columns if "Qtd_" in c]
-            if concorrentes:
-                presenca_concorr = df_neg_lojas[concorrentes].sum().sort_values(ascending=False)
-                st.bar_chart(presenca_concorr)
-
-    except Exception as e:
-        st.error(f"Erro ao processar diagnóstico de expansão: {e}")
-
 # 4. ANÁLISE FINANCEIRA (DRE)
+# ==============================================================================
 st.markdown("---")
-st.header("Análise de DRE e Rentabilidade")
-st.sidebar.header("3. Relatórios Financeiros")
+st.header("4. Análise de DRE e Rentabilidade")
+st.sidebar.header("4. Relatórios Financeiros")
 
 if "dre_file" in st.session_state and st.session_state.dre_file:
     nomes_arquivos = [f.name for f in st.session_state.dre_file]
@@ -266,10 +248,7 @@ arquivos_dre = st.sidebar.file_uploader(
 )
 
 if arquivos_dre:
-    if "Todas" in selecionados or not selecionados:
-        arquivos_para_processar = arquivos_dre
-    else:
-        arquivos_para_processar = [f for f in arquivos_dre if f.name in selecionados]
+    arquivos_para_processar = arquivos_dre if ("Todas" in selecionados or not selecionados) else [f for f in arquivos_dre if f.name in selecionados]
 
     for arquivo_dre in arquivos_para_processar:
         try:
@@ -319,7 +298,7 @@ if arquivos_dre:
                     "Conta": ["Folha", "ADM", "Operação", "Quebra"],
                     "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
                 })
-                st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title=f"Distribuição de Custos"), use_container_width=True)
+                st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Distribuição de Custos"), use_container_width=True)
 
             st.subheader("DRE Detalhado")
             df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
@@ -351,37 +330,26 @@ if arquivos_dre:
                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
+            # --- PROJEÇÕES FINAIS ---
             meses_positivos = 0
-            p_equilibrio, v_alvo_sugerida = 0.0, 0.0
-            cmv_exibicao_formatado = 0.0
-            
             if "RES" in indices:
                 row_res = df_dre_raw.iloc[indices["RES"]]
                 for i in range(3, len(row_res), 2):
-                    if clean_numeric(row_res[i]) > 0: 
-                        meses_positivos += 1
+                    if clean_numeric(row_res[i]) > 0: meses_positivos += 1
                 
                 try:
-                    faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
-                    resultado_atual = clean_numeric(row_res[29])
-                    cmv_bruto = clean_numeric(df_dre_raw.iloc[indices["CMV"], 30])
-                    cmv_para_calculo = abs(cmv_bruto)
-                    if cmv_para_calculo > 1: cmv_para_calculo = cmv_para_calculo / 100
-                    cmv_exibicao_formatado = cmv_para_calculo * 100
-                    margem_cont_real = 1 - cmv_para_calculo
-                    if margem_cont_real > 0:
-                        p_equilibrio = faturamento_atual + (abs(resultado_atual) / margem_cont_real)
-                    else:
-                        p_equilibrio = 0.0
-                    v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / 0.35) 
-                except:
-                    p_equilibrio, v_alvo_sugerida = 0.0, 0.0
-
-            r1, r2, r3 = st.columns(3)
-            r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
-            r2.success(f"**Ponto de Equilíbrio CMV {cmv_exibicao_formatado:.0f}%:** R$ {p_equilibrio:,.2f}")
-            r3.warning(f"**Venda Alvo Sugerida CMV 65%:** R$ {v_alvo_sugerida:,.2f}")
+                    f_at = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
+                    res_at = clean_numeric(row_res[29])
+                    cmv_at = abs(clean_numeric(df_dre_raw.iloc[indices["CMV"], 30]))
+                    if cmv_at > 1: cmv_at /= 100
+                    p_eq = f_at + (abs(res_at) / (1 - cmv_at)) if (1-cmv_at) > 0 else 0
+                    v_alvo = f_at + (abs(res_at) / 0.35)
+                    
+                    r1, r2, r3 = st.columns(3)
+                    r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
+                    r2.success(f"**Ponto de Equilíbrio (CMV {cmv_at*100:.0f}%):** R$ {p_eq:,.2f}")
+                    r3.warning(f"**Venda Alvo (Margem 35%):** R$ {v_alvo:,.2f}")
+                except: pass
             st.markdown("---")
-
         except Exception as e:
-            st.error(f"Erro ao processar {arquivo_dre.name}: {e}")
+            st.error(f"Erro na seção 4 ({arquivo_dre.name}): {e}")
