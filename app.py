@@ -13,7 +13,10 @@ st.markdown("---")
 def load_data(file):
     df = pd.read_excel(file)
     
-    # Lista de colunas financeiras para garantir que sejam float
+    # Remove espaços em branco extras dos nomes das colunas
+    df.columns = df.columns.str.strip()
+    
+    # Lista de colunas financeiras (Verifica se existem antes de processar)
     cols_financeiras = ['RO Mês', 'RO Acum', 'Aluguel Mês', '%RO Mês', '%RO Acum', '%Aluguel Mês', 'Multa rescisória atual']
     
     for col in cols_financeiras:
@@ -149,7 +152,6 @@ if uploaded_file:
 
         with col_fin2:
             st.subheader("Top 10 Multas Rescisórias")
-            # Garante que a coluna existe antes de tentar plotar
             col_multa = 'Multa rescisória atual'
             if col_multa in df.columns:
                 top_multas = df.nlargest(10, col_multa)
