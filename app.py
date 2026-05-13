@@ -128,21 +128,20 @@ if arquivo_negativas is not None:
         else:
             df_neg = pd.read_excel(arquivo_negativas)
 
-        # AJUSTE: Força todos os nomes de colunas a serem strings para evitar TypeError
+        # --- AJUSTE CRÍTICO: Força todos os nomes de colunas a serem strings ---
         df_neg.columns = [str(c) for c in df_neg.columns]
         
-        # Filtro de lojas com RO Negativo (Usa nome fixo ou posição segura)
+        # Filtro de lojas com RO Negativo
         col_ro = 'RO Mês' if 'RO Mês' in df_neg.columns else (df_neg.columns[5] if len(df_neg.columns) > 5 else df_neg.columns[-1])
         
         # Garante que a coluna de RO seja tratada como número antes de filtrar
         df_neg[col_ro] = pd.to_numeric(df_neg[col_ro], errors='coerce').fillna(0)
         df_neg_lojas = df_neg[df_neg[col_ro] < 0].copy()
 
-        # --- MÉTRICAS DE IMPACTO ---
+        # --- MÉTRICAS DE IMPACTO (Mantidas integralmente) ---
         k1, k2, k3, k4 = st.columns(4)
         preju_total = df_neg_lojas[col_ro].sum()
         
-        # Uso de pd.to_numeric para evitar erros em colunas vazias
         preju_acum = pd.to_numeric(df_neg_lojas['RO Acum'], errors='coerce').sum() if 'RO Acum' in df_neg_lojas.columns else 0
         multas = pd.to_numeric(df_neg_lojas['Multa rescisória atual'], errors='coerce').sum() if 'Multa rescisória atual' in df_neg_lojas.columns else 0
         
@@ -167,7 +166,7 @@ if arquivo_negativas is not None:
 
         with col_graf2:
             st.write("**🏆 Top 10 Redes Concorrentes**")
-            # AJUSTE: cast de 'c' para string na lista de compreensão
+            # AJUSTE: Garantia de string na iteração das colunas de concorrência
             col_conc = [c for c in df_neg_lojas.columns if "Qtd_" in str(c) and "Total" not in str(c)]
             if col_conc:
                 soma_conc = df_neg_lojas[col_conc].apply(pd.to_numeric, errors='coerce').sum().sort_values(ascending=False).head(10)
