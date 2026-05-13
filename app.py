@@ -254,7 +254,7 @@ if arquivos_dre:
                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            # --- AJUSTE SOLICITADO: CÁLCULO DA VENDA ALVO SUGERIDA ---
+            # --- AJUSTE SOLICITADO: INVERSÃO DE NOMENCLATURAS ---
             meses_positivos = 0
             v_necessaria, p_equilibrio = 0.0, 0.0
             
@@ -270,7 +270,6 @@ if arquivos_dre:
                     
                     # CMV % na linha CMV, coluna índice 30
                     cmv_perc = abs(clean_numeric(df_dre_raw.iloc[indices["CMV"], 30]))
-                    # Se vier como 66 em vez de 0.66, normaliza
                     if cmv_perc > 1: cmv_perc = cmv_perc / 100
                     
                     # Resultado (Prejuízo) na linha Resultado Operacional, coluna índice 29
@@ -280,7 +279,7 @@ if arquivos_dre:
                     margem_cont_perc = 1 - cmv_perc
                     
                     if margem_cont_perc > 0:
-                        # Venda Alvo = Faturamento Atual + (Valor do Prejuízo / % de Margem)
+                        # Cálculo que agora será chamado de Ponto de Equilíbrio
                         v_necessaria = faturamento_atual + (abs(resultado_atual) / margem_cont_perc)
                     else:
                         v_necessaria = 0.0
@@ -292,8 +291,9 @@ if arquivos_dre:
 
             r1, r2, r3 = st.columns(3)
             r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
-            r2.success(f"**Venda Alvo Sugerida:** R$ {v_necessaria:,.2f}")
-            r3.warning(f"**Ponto de Equilíbrio:** R$ {p_equilibrio:,.2f}")
+            # Inversão aplicada abaixo conforme solicitado
+            r2.success(f"**Ponto de Equilíbrio:** R$ {v_necessaria:,.2f}")
+            r3.warning(f"**Venda Alvo Sugerida:** R$ {p_equilibrio:,.2f}")
             st.markdown("---")
 
         except Exception as e:
