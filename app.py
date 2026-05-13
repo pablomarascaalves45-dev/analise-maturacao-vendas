@@ -46,12 +46,14 @@ if uploaded_file:
         # --- DASHBOARD DE MÉTRICAS ---
         total_prejuizo_mes = df['RO Mês'].sum()
         total_prejuizo_acum = df['RO Acum'].sum()
+        qtd_lojas = len(df) # Contagem das lojas analisadas
         
         # Como o ajuste já foi feito no load_data, pegamos a média direta
         media_aluguel_perc = df['%Aluguel Mês'].mean()
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("Prejuízo Total (Mês)", f"R$ {total_prejuizo_mes:,.2f}")
+        # Ajuste no rótulo para mostrar a quantidade de lojas
+        c1.metric(f"Prejuízo Total Mês ({qtd_lojas} lojas)", f"R$ {total_prejuizo_mes:,.2f}")
         c2.metric("Prejuízo Acumulado", f"R$ {total_prejuizo_acum:,.2f}")
         c3.metric("Média % Aluguel", f"{media_aluguel_perc:.2f}%")
 
