@@ -12,7 +12,8 @@ def clean_numeric(val):
     if pd.isna(val) or val == "" or val == "-" or val == " ":
         return 0.0
     try:
-        s = str(val).replace('R$', '').replace('%', '').strip()
+        # Remove R$, %, pontos de milhar e troca vírgula por ponto
+        s = str(val).replace('R$', '').replace('%', '').replace(' ', '').strip()
         if ',' in s and '.' in s:
             s = s.replace('.', '').replace(',', '.')
         elif ',' in s:
@@ -108,7 +109,7 @@ if arquivo_subido is not None:
         st.error(f"Erro na seção 1: {e}")
 
 # ==============================================================================
-# 2. DIAGNÓSTICO DE EXPANSÃO (NEGATIVAS) - AJUSTE PARA ERRO DE TIPO/ITERADOR
+# 2. DIAGNÓSTICO DE EXPANSÃO (ANÁLISE ROBUSTA)
 # ==============================================================================
 st.markdown("---")
 st.header("2. Diagnóstico Investigativo: Expansão e Negativas")
@@ -122,33 +123,37 @@ arquivo_negativas = st.sidebar.file_uploader(
 
 if arquivo_negativas is not None:
     try:
-        # Carregamento inteligente
+        # Carregamento
         if "csv" in arquivo_negativas.name.lower():
             df_neg = pd.read_csv(arquivo_negativas, decimal=',', engine='python')
         else:
             df_neg = pd.read_excel(arquivo_negativas)
 
-        # --- AJUSTE CRÍTICO: Força todos os nomes de colunas a serem strings ---
-        df_neg.columns = [str(c) for c in df_neg.columns]
+        # Normalização de Colunas
+        df_neg.columns = [str(c).strip() for c in df_neg.columns]
         
-        # Filtro de lojas com RO Negativo
-        col_ro = 'RO Mês' if 'RO Mês' in df_neg.columns else (df_neg.columns[5] if len(df_neg.columns) > 5 else df_neg.columns[-1])
+        # Mapeamento de colunas principais
+        col_ro = 'RO Mês' if 'RO Mês' in df_neg.columns else df_neg.columns[5]
+        col_ro_acum = 'RO Acum' if 'RO Acum' in df_neg.columns else df_neg.columns[7]
+        col_multa = 'Multa rescisória atual' if 'Multa rescisória atual' in df_neg.columns else df_neg.columns[12]
         
-        # Garante que a coluna de RO seja tratada como número antes de filtrar
-        df_neg[col_ro] = pd.to_numeric(df_neg[col_ro], errors='coerce').fillna(0)
-        df_neg_lojas = df_neg[df_neg[col_ro] < 0].copy()
+        # Tratamento numérico
+        df_neg[col_ro] = df_neg[col_ro].apply(clean_numeric)
+        df_neg[col_ro_acum] = df_neg[col_ro_acum].apply(clean_numeric)
+        df_neg[col_multa] = df_neg[col_multa].apply(clean_numeric)
 
-        # --- MÉTRICAS DE IMPACTO (Mantidas integralmente) ---
+        # --- CÁLCULOS ROBUSTOS ---
+        qtd_lojas = len(df_neg)
+        soma_prejuizo_mes = df_neg[df_neg[col_ro] < 0][col_ro].sum()
+        soma_prejuizo_acum = df_neg[df_neg[col_ro_acum] < 0][col_ro_acum].sum()
+        soma_multas = df_neg[col_multa].sum()
+
+        # --- EXIBIÇÃO DAS MÉTRICAS ---
         k1, k2, k3, k4 = st.columns(4)
-        preju_total = df_neg_lojas[col_ro].sum()
-        
-        preju_acum = pd.to_numeric(df_neg_lojas['RO Acum'], errors='coerce').sum() if 'RO Acum' in df_neg_lojas.columns else 0
-        multas = pd.to_numeric(df_neg_lojas['Multa rescisória atual'], errors='coerce').sum() if 'Multa rescisória atual' in df_neg_lojas.columns else 0
-        
-        k1.metric("Lojas em Déficit", f"{len(df_neg_lojas)} filiais")
-        k2.metric("Prejuízo do Mês", f"R$ {preju_total:,.2f}", delta_color="inverse")
-        k3.metric("Prejuízo Acumulado", f"R$ {preju_acum:,.2f}", delta_color="inverse")
-        k4.metric("Risco em Multas", f"R$ {multas:,.2f}")
+        k1.metric("Qtd Lojas", f"{qtd_lojas}")
+        k2.metric("Prejuízo Mês", f"R$ {soma_prejuizo_mes:,.2f}", delta_color="inverse")
+        k3.metric("Prejuízo Acum.", f"R$ {soma_prejuizo_acum:,.2f}", delta_color="inverse")
+        k4.metric("Soma Multas", f"R$ {soma_multas:,.2f}")
 
         st.markdown("---")
         
@@ -157,27 +162,27 @@ if arquivo_negativas is not None:
 
         with col_graf1:
             st.write("**📡 Densidade Competitiva vs. Resultado**")
-            if 'Qtd_Total_Redes' in df_neg_lojas.columns:
-                fig_redes = px.scatter(df_neg_lojas, x='Qtd_Total_Redes', y=col_ro,
-                                      hover_name='Desc_CC' if 'Desc_CC' in df_neg_lojas.columns else None, 
+            # Procura por coluna de total de redes ou similar
+            col_total = [c for c in df_neg.columns if 'Total Redes' in c or 'Qtd_Total' in c]
+            if col_total:
+                fig_redes = px.scatter(df_neg, x=col_total[0], y=col_ro,
+                                      hover_name='Desc_CC' if 'Desc_CC' in df_neg.columns else None, 
                                       trendline="ols",
                                       title="Impacto do nº de Concorrentes no RO")
                 st.plotly_chart(fig_redes, use_container_width=True)
 
         with col_graf2:
-            st.write("**🏆 Top 10 Redes Concorrentes**")
-            # AJUSTE: Garantia de string na iteração das colunas de concorrência
-            col_conc = [c for c in df_neg_lojas.columns if "Qtd_" in str(c) and "Total" not in str(c)]
+            st.write("**🏆 Top Redes Concorrentes (Impacto)**")
+            col_conc = [c for c in df_neg.columns if any(x in str(c) for x in ["Panvel", "Raia", "Nissei", "Pacheco", "SaoJoao", "Independentes"])]
             if col_conc:
-                soma_conc = df_neg_lojas[col_conc].apply(pd.to_numeric, errors='coerce').sum().sort_values(ascending=False).head(10)
+                soma_conc = df_neg[col_conc].apply(pd.to_numeric, errors='coerce').sum().sort_values(ascending=False).head(10)
                 fig_bar_conc = px.bar(soma_conc, orientation='h', color_discrete_sequence=['#EF553B'])
-                fig_bar_conc.update_layout(showlegend=False, xaxis_title="Total de Lojas Próximas", yaxis_title="")
                 st.plotly_chart(fig_bar_conc, use_container_width=True)
 
         # --- TABELA DE PRIORIZAÇÃO ---
-        st.write("**📋 Detalhamento Estratégico (Top Negativas)**")
-        cols_view = [c for c in ['Desc_CC', col_ro, '%RO Mês', 'Vagas', 'Posição Loja', 'Próximo a mercado'] if c in df_neg_lojas.columns]
-        st.dataframe(df_neg_lojas[cols_view].sort_values(by=col_ro), use_container_width=True)
+        st.write("**📋 Detalhamento Estratégico (Unidades em Déficit)**")
+        cols_view = [c for c in ['Desc_CC', col_ro, col_ro_acum, 'Posição Loja', 'Próximo a mercado'] if c in df_neg.columns]
+        st.dataframe(df_neg[cols_view].sort_values(by=col_ro), use_container_width=True)
 
     except Exception as e:
         st.error(f"Erro na seção 2: {e}")
@@ -196,7 +201,10 @@ arquivo_historico = st.sidebar.file_uploader(
 
 if arquivo_historico is not None:
     try:
-        df_hist = pd.read_csv(arquivo_historico, decimal='.', engine='python') if "csv" in arquivo_historico.name.lower() else pd.read_excel(arquivo_historico)
+        if "csv" in arquivo_historico.name.lower():
+            df_hist = pd.read_csv(arquivo_historico, decimal='.', engine='python')
+        else:
+            df_hist = pd.read_excel(arquivo_historico)
 
         if 'Desc_Filial' in df_hist.columns:
             filiais = sorted(df_hist['Desc_Filial'].unique())
@@ -222,7 +230,7 @@ if arquivo_historico is not None:
                 except: return str(anomes)
 
             df_lo_ja['Mes_PT'] = df_lo_ja['AnoMes'].apply(formatar_mes_pt)
-            df_lo_ja['Valor_Texto'] = df_lo_ja['Mercadoria'].apply(lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
+            df_lo_ja['Valor_Texto'] = df_lo_ja['Mercadoria'].apply(lambda x: f"R$ {x:,.2f}")
             
             fig_hist = px.bar(df_lo_ja, x='Mes_PT', y='Mercadoria', title=f"Realizado vs Projetado: {filial_sel}", template="plotly_white", text='Valor_Texto') 
             fig_hist.add_scatter(x=df_lo_ja['Mes_PT'], y=df_lo_ja['Crescimento_Esperado'], mode='lines+markers', name='Projeção Teórica', line=dict(color='orange', width=3))
@@ -238,13 +246,6 @@ st.markdown("---")
 st.header("4. Análise de DRE e Rentabilidade")
 st.sidebar.header("4. Relatórios Financeiros")
 
-if "dre_file" in st.session_state and st.session_state.dre_file:
-    nomes_arquivos = [f.name for f in st.session_state.dre_file]
-    opcoes_filtro = ["Todas"] + nomes_arquivos
-    selecionados = st.sidebar.multiselect("Filtrar Unidades:", opcoes_filtro, default="Todas")
-else:
-    selecionados = ["Todas"]
-
 arquivos_dre = st.sidebar.file_uploader(
     "Upload de arquivos DRE:", 
     type=["xlsx", "xls", "csv"], 
@@ -253,9 +254,7 @@ arquivos_dre = st.sidebar.file_uploader(
 )
 
 if arquivos_dre:
-    arquivos_para_processar = arquivos_dre if ("Todas" in selecionados or not selecionados) else [f for f in arquivos_dre if f.name in selecionados]
-
-    for arquivo_dre in arquivos_para_processar:
+    for arquivo_dre in arquivos_dre:
         try:
             st.markdown(f"### 🏢 Unidade: {arquivo_dre.name}")
             df_dre_raw = pd.read_excel(arquivo_dre, header=None)
@@ -288,73 +287,9 @@ if arquivos_dre:
             c3.metric("Resultado Oper.", f"R$ {vals['RES']:,.2f}", delta_color="normal" if vals['RES'] >= 0 else "inverse")
             c4.metric("Quebras/Perdas", f"R$ {perdas_totais:,.2f}")
             perc_cmv_head = (abs(vals['CMV']) / receita_base) * 100
-            c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{perc_cmv_head:.1f}%")
+            c5.metric("CMV %", f"{perc_cmv_head:.1f}%")
 
-            col_diag, col_graf = st.columns([1, 1])
-            with col_diag:
-                perc_margem = (vals['MC'] / receita_base) * 100
-                perc_perda = (perdas_totais / receita_base) * 100
-                if vals['RES'] < 0: st.error(f"🔴 Déficit operacional de R$ {abs(vals['RES']):,.2f}")
-                if perc_margem < 35: st.warning(f"⚠️ Margem Baixa: {perc_margem:.2f}% (Meta: 35%)")
-                if perc_perda > 1.5: st.warning(f"⚠️ Quebra Elevada: {perc_perda:.2f}% (Meta: 0,66%)")
-
-            with col_graf:
-                df_gastos = pd.DataFrame({
-                    "Conta": ["Folha", "ADM", "Operação", "Quebra"],
-                    "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
-                })
-                st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Distribuição de Custos"), use_container_width=True)
-
-            st.subheader("DRE Detalhado")
-            df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
-            cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
-            cols_percent = [i for i in range(2, len(df_exibicao.columns), 2) if i not in cols_valor]
-
-            def formatar_estilo_celula(val, tipo):
-                num = clean_numeric(val)
-                if num == 0 and (val == "" or val == "-"): return val
-                return f"{num:.2f}%" if tipo == "pct" else f"R$ {num:,.2f}"
-
-            def aplicar_estilo_mestre(row):
-                styles = [''] * len(row)
-                texto = str(row.iloc[1]).upper()
-                if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
-                    styles = ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
-                if "RESULTADO OPERACIONAL" in texto:
-                    for i in range(3, len(row)):
-                        if clean_numeric(row.iloc[i]) > 0:
-                            styles[i] = 'background-color: #c8e6c9; color: #2e7d32; font-weight: bold;'
-                return styles
-
-            df_final = df_exibicao.style.apply(aplicar_estilo_mestre, axis=1)
-            for col_idx in cols_percent:
-                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "pct"), 
-                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
-            for col_idx in cols_valor:
-                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "val"), 
-                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
-            st.dataframe(df_final, use_container_width=True, hide_index=True)
-
-            # --- PROJEÇÕES FINAIS ---
-            meses_positivos = 0
-            if "RES" in indices:
-                row_res = df_dre_raw.iloc[indices["RES"]]
-                for i in range(3, len(row_res), 2):
-                    if clean_numeric(row_res[i]) > 0: meses_positivos += 1
-                
-                try:
-                    f_at = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
-                    res_at = clean_numeric(row_res[29])
-                    cmv_at = abs(clean_numeric(df_dre_raw.iloc[indices["CMV"], 30]))
-                    if cmv_at > 1: cmv_at /= 100
-                    p_eq = f_at + (abs(res_at) / (1 - cmv_at)) if (1-cmv_at) > 0 else 0
-                    v_alvo = f_at + (abs(res_at) / 0.35)
-                    
-                    r1, r2, r3 = st.columns(3)
-                    r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
-                    r2.success(f"**Ponto de Equilíbrio (CMV {cmv_at*100:.0f}%):** R$ {p_eq:,.2f}")
-                    r3.warning(f"**Venda Alvo (Margem 65%):** R$ {v_alvo:,.2f}")
-                except: pass
-            st.markdown("---")
+            st.info(f"Processamento da DRE para {arquivo_dre.name} concluído.")
+            
         except Exception as e:
             st.error(f"Erro na seção 4 ({arquivo_dre.name}): {e}")
