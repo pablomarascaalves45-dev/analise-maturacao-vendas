@@ -13,11 +13,8 @@ st.markdown("---")
 def load_data(file):
     df = pd.read_excel(file)
     
-    # Remove espaços em branco extras dos nomes das colunas
-    df.columns = df.columns.str.strip()
-    
-    # Lista de colunas financeiras (Verifica se existem antes de processar)
-    cols_financeiras = ['RO Mês', 'RO Acum', 'Aluguel Mês', '%RO Mês', '%RO Acum', '%Aluguel Mês', 'Multa rescisória atual']
+    # Lista de colunas financeiras para garantir que sejam float
+    cols_financeiras = ['RO Mês', 'RO Acum', 'Aluguel Mês', '%RO Mês', '%RO Acum', '%Aluguel Mês']
     
     for col in cols_financeiras:
         if col in df.columns:
@@ -109,14 +106,17 @@ if uploaded_file:
         lojas_repetidas = sorted(list(lojas_mes.intersection(lojas_acum)))
         
         if lojas_repetidas:
+            # Texto explicativo simples sem emojis
             st.write(f"Lojas presentes no Top 10 (Mês e Acumulado): {len(lojas_repetidas)}")
             
+            # Criando colunas dinâmicas (ex: se tiver 4 lojas, cria 4 colunas lado a lado)
             qtd_cols = len(lojas_repetidas)
             cols = st.columns(qtd_cols) 
             
             for i, loja in enumerate(lojas_repetidas):
                 dados_loja = df[df['Desc_CC'] == loja].iloc[0]
                 
+                # Coleta e formatação de dados
                 abertura = dados_loja['Inauguração']
                 if isinstance(abertura, pd.Timestamp):
                     abertura = abertura.strftime('%d/%m/%Y')
@@ -126,6 +126,7 @@ if uploaded_file:
                 aluguel = dados_loja['Aluguel Mês']
                 multa = dados_loja.get('Multa rescisória atual', 0)
                 
+                # Exibição dentro do balão azul (st.info)
                 with cols[i]:
                     st.info(f"""
                     **{loja}**
@@ -137,30 +138,6 @@ if uploaded_file:
                     """)
         else:
             st.write("Não há recorrência de lojas entre os rankings selecionados.")
-
-        # --- NOVA SEÇÃO: ALUGUÉIS E MULTAS ---
-        st.markdown("---")
-        col_fin1, col_fin2 = st.columns(2)
-
-        with col_fin1:
-            st.subheader("Top 10 Aluguéis Mais Altos")
-            top_aluguel = df.nlargest(10, 'Aluguel Mês')
-            fig_aluguel = px.bar(top_aluguel, x='Aluguel Mês', y='Desc_CC', orientation='h',
-                                 color='Aluguel Mês', color_continuous_scale='Blues')
-            fig_aluguel.update_layout(yaxis={'categoryorder':'total ascending'})
-            st.plotly_chart(fig_aluguel, use_container_width=True)
-
-        with col_fin2:
-            st.subheader("Top 10 Multas Rescisórias")
-            col_multa = 'Multa rescisória atual'
-            if col_multa in df.columns:
-                top_multas = df.nlargest(10, col_multa)
-                fig_multas = px.bar(top_multas, x=col_multa, y='Desc_CC', orientation='h',
-                                    color=col_multa, color_continuous_scale='Oranges')
-                fig_multas.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_multas, use_container_width=True)
-            else:
-                st.warning("Coluna de Multas não encontrada para geração do gráfico.")
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
