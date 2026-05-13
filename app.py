@@ -149,6 +149,96 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
+
+# ==============================================================================
+# NOVO BLOCO: ANÁLISE INVESTIGATIVA DE NEGATIVAS (EXPANSÃO)
+# ==============================================================================
+st.markdown("---")
+st.header("🔍 Diagnóstico Investigativo: Análise de Negativas")
+st.sidebar.header("2.5. Expansão e Negativas")
+
+arquivo_negativas = st.sidebar.file_uploader(
+    "Planilha de Negativas (Expansão):", 
+    type=["xlsx", "xls", "csv"], 
+    key="neg_file"
+)
+
+if arquivo_negativas is not None:
+    try:
+        # Carregamento do arquivo de negativas
+        if "csv" in arquivo_negativas.name.lower():
+            df_neg = pd.read_csv(arquivo_negativas, decimal=',', engine='python')
+        else:
+            df_neg = pd.read_excel(arquivo_negativas)
+
+        # 1. Filtro Investigativo (Focar em unidades com RO Negativo)
+        df_analise = df_neg[df_neg['RO Mês'] < 0].copy() if 'RO Mês' in df_neg.columns else df_neg.copy()
+        
+        st.subheader("Padrões de Performance Insatisfatória")
+        
+        # 2. Correlação entre Concorrência e Resultado Operacional
+        cols_concorrência = [
+            'Qtd_SaoJoao', 'Qtd_Independentes', 'Qtd_Total_Redes', 'Qtd_Panvel', 
+            'Qtd_Raia', 'Qtd_Morifarma', 'Qtd_Nissei', 'Qtd_PPCatarinense', 
+            'Qtd_Pacheco', 'Qtd_FarmTrabalhador'
+        ]
+        cols_presentes = [c for c in cols_concorrência if c in df_analise.columns]
+        
+        if 'RO Mês' in df_analise.columns and cols_presentes:
+            # Calculando correlação (quão mais concorrência, menor o RO?)
+            corr_data = df_analise[cols_presentes + ['RO Mês']].corr()['RO Mês'].sort_values()
+            
+            c_invest1, c_invest2 = st.columns(2)
+            
+            with c_invest1:
+                st.write("**Impacto da Concorrência no Resultado**")
+                st.info("Valores negativos indicam que a presença desse concorrente reduz o RO.")
+                st.dataframe(corr_data.drop('RO Mês', errors='ignore').rename("Correlação com RO"))
+
+            with c_invest2:
+                # 3. Análise de Vagas e Infraestrutura
+                if 'Vagas' in df_analise.columns:
+                    st.write("**Performance: Com Vagas vs Sem Vagas**")
+                    ro_vagas = df_analise.groupby('Vagas')['RO Mês'].mean().reset_index()
+                    fig_vagas = px.bar(ro_vagas, x='Vagas', y='RO Mês', color='Vagas', 
+                                     title="Média de RO por Disponibilidade de Vagas")
+                    st.plotly_chart(fig_vagas, use_container_width=True)
+
+        # 4. Diagnóstico Detalhado por Coluna
+        st.markdown("### 📋 Diagnóstico de Especialista")
+        
+        obs = []
+        # Investigação de Vagas
+        if 'Vagas' in df_analise.columns:
+            sem_vagas = df_analise[df_analise['Vagas'] == 'Não']
+            if not sem_vagas.empty:
+                perc_vagas = (len(sem_vagas) / len(df_analise)) * 100
+                obs.append(f"🚩 **Fator Conveniência:** {perc_vagas:.1f}% das unidades negativas **NÃO possuem vagas** de estacionamento.")
+
+        # Investigação de Concorrência
+        if not corr_data.empty:
+            ofensor = corr_data.idxmin()
+            obs.append(f"⚔️ **Canibalização/Redes:** A presença de concorrentes do tipo **{ofensor}** possui a maior correlação estatística com o prejuízo atual.")
+
+        # Investigação de Posição
+        if 'Posição Loja' in df_analise.columns:
+            pos_critica = df_analise.groupby('Posição Loja')['RO Mês'].mean().idxmin()
+            obs.append(f"📍 **Geomarketing:** Lojas em posição **{pos_critica}** apresentam os piores desempenhos médios acumulados.")
+
+        # Investigação de Próximo a Mercado
+        if 'Próximo a mercado' in df_analise.columns:
+            perto_mkt = df_analise[df_analise['Próximo a mercado'] == 'Sim']['RO Mês'].mean()
+            longe_mkt = df_analise[df_analise['Próximo a mercado'] == 'Não']['RO Mês'].mean()
+            if perto_mkt < longe_mkt:
+                obs.append("🛒 **Proximidade Alimentar:** Estar próximo a mercados está gerando maior pressão de margem ou custo fixo nestas unidades.")
+
+        for item in obs:
+            st.write(item)
+
+    except Exception as e:
+        st.error(f"Erro ao processar planilha de expansão: {e}")
+
+
 # 4. ANÁLISE FINANCEIRA (DRE)
 st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
@@ -273,7 +363,6 @@ if arquivos_dre:
                     cmv_bruto = clean_numeric(df_dre_raw.iloc[indices["CMV"], 30])
                     
                     # Normalização Inteligente:
-                    # Se vier 0.66 (decimal), usamos 0.66. Se vier 66.0 (inteiro), dividimos por 100.
                     cmv_para_calculo = abs(cmv_bruto)
                     if cmv_para_calculo > 1: 
                         cmv_para_calculo = cmv_para_calculo / 100
@@ -294,7 +383,6 @@ if arquivos_dre:
 
             r1, r2, r3 = st.columns(3)
             r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
-            # Agora exibe o percentual correto (66% em vez de 1%)
             r2.success(f"**Ponto de Equilíbrio CMV {cmv_exibicao_formatado:.0f}%:** R$ {p_equilibrio:,.2f}")
             r3.warning(f"**Venda Alvo Sugerida CMV 65%:** R$ {v_alvo_sugerida:,.2f}")
             st.markdown("---")
