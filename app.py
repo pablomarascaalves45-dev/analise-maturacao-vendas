@@ -27,6 +27,12 @@ def load_data(file):
                            .strip())
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
+            # AJUSTE SOLICITADO: Se o valor for decimal (ex: 0.04), converte para percentual inteiro (4.0)
+            if col.startswith('%'):
+                # Verifica se a média da coluna é pequena, indicando formato decimal
+                if df[col].abs().mean() < 1.0:
+                    df[col] = df[col] * 100
+            
     return df
 
 # 3. SIDEBAR - UPLOAD
@@ -41,9 +47,8 @@ if uploaded_file:
         total_prejuizo_mes = df['RO Mês'].sum()
         total_prejuizo_acum = df['RO Acum'].sum()
         
+        # Como o ajuste já foi feito no load_data, pegamos a média direta
         media_aluguel_perc = df['%Aluguel Mês'].mean()
-        # Ajuste de escala caso o Excel venha em decimal (ex: 0.07 vira 7.00%)
-        if media_aluguel_perc < 1: media_aluguel_perc *= 100
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Prejuízo Total (Mês)", f"R$ {total_prejuizo_mes:,.2f}")
@@ -55,7 +60,6 @@ if uploaded_file:
         
         with col_graf1:
             st.subheader("Top 10 Unidades Críticas (Mês)")
-            # As 10 lojas com os menores valores de RO (mais negativas)
             top_negativas = df.nsmallest(10, 'RO Mês')
             fig_neg = px.bar(top_negativas, x='RO Mês', y='Desc_CC', orientation='h',
                              color='RO Mês', color_continuous_scale='Reds_r')
@@ -67,6 +71,10 @@ if uploaded_file:
             fig_scat = px.scatter(df, x='%Aluguel Mês', y='RO Mês', 
                                   hover_name='Desc_CC', size='Aluguel Mês',
                                   color='Diretor', title="Impacto do Aluguel no RO")
+            
+            # Ajuste do sufixo no eixo X do gráfico para mostrar %
+            fig_scat.update_layout(xaxis_ticksuffix="%")
+            
             st.plotly_chart(fig_scat, use_container_width=True)
 
     except Exception as e:
