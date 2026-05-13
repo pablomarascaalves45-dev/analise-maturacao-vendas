@@ -266,15 +266,19 @@ if arquivos_dre:
                         meses_positivos += 1
                 
                 try:
-                    # Faturamento atual (Receita Líquida) na coluna índice 29
-                    faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
-                    # Resultado (Lucro/Prejuízo) na linha Resultado Operacional, coluna índice 29
-                    resultado_atual = clean_numeric(row_res[29])
+                    # Faturamento atual (Receita Líquida) - Coluna de Valor (Índice 3)
+                    faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 3])
+                    # Resultado (Lucro/Prejuízo) - Coluna de Valor (Índice 3)
+                    resultado_atual = clean_numeric(row_res[3])
                     
-                    # 1. Cálculo do Ponto de Equilíbrio (Considera CMV Real do arquivo)
-                    cmv_exibicao_real = clean_numeric(df_dre_raw.iloc[indices["CMV"], 30])
+                    # 1. Cálculo do Ponto de Equilíbrio
+                    # Pega o percentual do CMV na coluna ao lado do valor (Índice 4 no DRE padrão)
+                    cmv_exibicao_real = clean_numeric(df_dre_raw.iloc[indices["CMV"], 4])
                     cmv_perc_real = abs(cmv_exibicao_real)
+                    
+                    # Normaliza se vier como 66 em vez de 0.66
                     if cmv_perc_real > 1: cmv_perc_real = cmv_perc_real / 100
+                    
                     margem_cont_real = 1 - cmv_perc_real
                     
                     if margem_cont_real > 0:
@@ -282,9 +286,9 @@ if arquivos_dre:
                     else:
                         p_equilibrio = 0.0
 
-                    # 2. Cálculo da Venda Alvo Sugerida (Considera SEMPRE 65% de CMV - Meta Empresa)
+                    # 2. Cálculo da Venda Alvo Sugerida (Meta Fixa 65% conforme pedido)
                     cmv_meta = 0.65
-                    margem_meta = 1 - cmv_meta # Resulta em 0.35 (35%)
+                    margem_meta = 1 - cmv_meta
                     
                     if margem_meta > 0:
                         v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / margem_meta)
@@ -296,7 +300,7 @@ if arquivos_dre:
 
             r1, r2, r3 = st.columns(3)
             r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
-            # Ajuste de Nomenclatura Dinâmica
+            # Exibição do CMV real capturado (Ex: 66%)
             r2.success(f"**Ponto de Equilíbrio CMV {abs(cmv_exibicao_real):.0f}%:** R$ {p_equilibrio:,.2f}")
             r3.warning(f"**Venda Alvo Sugerida CMV 65%:** R$ {v_alvo_sugerida:,.2f}")
             st.markdown("---")
