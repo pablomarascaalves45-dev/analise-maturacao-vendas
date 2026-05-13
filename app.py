@@ -15,9 +15,13 @@ def clean_numeric(val):
     if pd.isna(val) or val == "" or val == "-" or val == " ":
         return 0.0
     try:
-        s = str(val).replace('R$', '').replace('%', '').replace(' ', '').strip()
+        # Remove símbolos e espaços, lida com formatos BR (1.000,00) e US (1,000.00)
+        s = str(val).replace('R$', '').replace('%', '').replace('\xa0', '').strip()
         if ',' in s and '.' in s:
-            s = s.replace('.', '').replace(',', '.')
+            if s.rfind(',') > s.rfind('.'): # Formato BR
+                s = s.replace('.', '').replace(',', '.')
+            else: # Formato US
+                s = s.replace(',', '')
         elif ',' in s:
             s = s.replace(',', '.')
         return float(s)
@@ -106,10 +110,10 @@ if arquivo_subido is not None:
             m3.metric("Tempo para 100%", f"{mes_mat} Meses")
 
     except Exception as e:
-        st.error(f"Erro no processamento da projeção: {e}")
+        st.error(f"Erro na seção de Maturação: {e}")
 
 # ==============================================================================
-# NOVA SEÇÃO: 2. DIAGNÓSTICO INVESTIGATIVO (PLANILHA DE NEGATIVAS)
+# 2. DIAGNÓSTICO INVESTIGATIVO (PLANILHA DE NEGATIVAS)
 # ==============================================================================
 st.markdown("---")
 st.header("2. Diagnóstico Investigativo: Expansão e Negativas")
@@ -128,58 +132,62 @@ if arquivo_negativas is not None:
         else:
             df_neg = pd.read_excel(arquivo_negativas)
 
-        # Normalização de Colunas
-        df_neg.columns = [str(c).strip() for c in df_neg.columns]
+        # Limpeza agressiva de nomes de colunas
+        df_neg.columns = [str(c).strip().replace('\n', ' ') for c in df_neg.columns]
         
-        # Mapeamento de colunas financeiras
-        col_ro_mes = 'RO Mês' if 'RO Mês' in df_neg.columns else df_neg.columns[5]
-        col_ro_acum = 'RO Acum' if 'RO Acum' in df_neg.columns else df_neg.columns[7]
-        col_multa = 'Multa rescisória atual' if 'Multa rescisória atual' in df_neg.columns else df_neg.columns[12]
+        # Mapeamento dinâmico por similaridade de nome
+        def find_col(possible_names, df):
+            for name in possible_names:
+                for col in df.columns:
+                    if name.lower() in col.lower():
+                        return col
+            return df.columns[0] # Fallback
 
-        # Conversão numérica
+        col_ro_mes = find_col(['RO Mês', 'RO Mes', 'Resultado Operacional Mês'], df_neg)
+        col_ro_acum = find_col(['RO Acum', 'Resultado Acumulado'], df_neg)
+        col_multa = find_col(['Multa rescisória atual', 'Multa'], df_neg)
+
+        # Conversão numérica segura
         df_neg[col_ro_mes] = df_neg[col_ro_mes].apply(clean_numeric)
         df_neg[col_ro_acum] = df_neg[col_ro_acum].apply(clean_numeric)
         df_neg[col_multa] = df_neg[col_multa].apply(clean_numeric)
 
-        # Cálculo das Métricas Solicitadas
+        # Cálculo das Métricas
         total_lojas = len(df_neg)
         prejuizo_mes = df_neg[df_neg[col_ro_mes] < 0][col_ro_mes].sum()
         prejuizo_acum = df_neg[df_neg[col_ro_acum] < 0][col_ro_acum].sum()
         total_multas = df_neg[col_multa].sum()
 
-        # Exibição dos KPIs
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("Total de Lojas", f"{total_lojas}")
         k2.metric("Prejuízo (Mês)", f"R$ {prejuizo_mes:,.2f}", delta_color="inverse")
         k3.metric("Prejuízo (Acumulado)", f"R$ {prejuizo_acum:,.2f}", delta_color="inverse")
         k4.metric("Soma das Multas", f"R$ {total_multas:,.2f}")
 
-        # Gráficos de Diagnóstico
         g1, g2 = st.columns(2)
-        
         with g1:
             st.write("**📡 Densidade Competitiva vs Resultado**")
             col_redes = [c for c in df_neg.columns if 'Total Redes' in c or 'Qtd_Total' in c]
             if col_redes:
                 fig_comp = px.scatter(df_neg, x=col_redes[0], y=col_ro_mes, 
-                                     hover_name='Desc_CC' if 'Desc_CC' in df_neg.columns else None,
-                                     trendline="ols", template="plotly_white",
-                                     title="Impacto da Concorrência no RO")
+                                     hover_name=find_col(['Desc_CC', 'CC', 'Unidade'], df_neg),
+                                     trendline="ols", template="plotly_white")
                 st.plotly_chart(fig_comp, use_container_width=True)
 
         with g2:
-            st.write("**🏆 Top Concorrentes Próximos**")
-            col_conc = [c for c in df_neg.columns if any(x in str(c) for x in ["SaoJoao", "Panvel", "Raia", "Nissei", "Pacheco"])]
-            if col_conc:
-                soma_conc = df_neg[col_conc].apply(pd.to_numeric, errors='coerce').sum().sort_values(ascending=False).head(10)
-                fig_conc = px.bar(soma_conc, orientation='h', color_discrete_sequence=['#EF553B'], title="Presença de Redes")
+            st.write("**🏆 Presença de Concorrentes**")
+            cols_concorrentes = ["SaoJoao", "Panvel", "Raia", "Nissei", "Pacheco"]
+            conc_disponiveis = [c for c in df_neg.columns if any(x in c for x in cols_concorrentes)]
+            if conc_disponiveis:
+                soma_conc = df_neg[conc_disponiveis].sum().sort_values(ascending=False)
+                fig_conc = px.bar(soma_conc, orientation='h', color_discrete_sequence=['#EF553B'])
                 st.plotly_chart(fig_conc, use_container_width=True)
 
-        st.write("**📋 Detalhamento das Unidades Analisadas**")
-        st.dataframe(df_neg.sort_values(by=col_ro_mes), use_container_width=True)
+        st.write("**📋 Detalhamento das Unidades**")
+        st.dataframe(df_neg.style.format({col_ro_mes: "R$ {:,.2f}", col_ro_acum: "R$ {:,.2f}"}), use_container_width=True)
 
     except Exception as e:
-        st.error(f"Erro no diagnóstico de negativas: {e}")
+        st.error(f"Erro no diagnóstico: {e}")
 
 # ==============================================================================
 # 3. COMPARATIVO REAL
@@ -215,17 +223,17 @@ if arquivo_historico is not None:
             
             def formatar_mes_pt(anomes):
                 try:
-                    s_anomes = str(anomes)
-                    ano, mes = (s_anomes.split('-') if '-' in s_anomes else (s_anomes[:4], s_anomes[4:]))
+                    s_anomes = str(anomes).replace('-', '')
+                    ano, mes = s_anomes[:4], s_anomes[4:6]
                     return f"{meses_map[mes]}/{ano[2:]}"
                 except: return str(anomes)
 
             df_loja['Mes_PT'] = df_loja['AnoMes'].apply(formatar_mes_pt)
-            df_loja['Valor_Texto'] = df_loja['Mercadoria'].apply(lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
+            df_loja['Valor_Texto'] = df_loja['Mercadoria'].apply(lambda x: f"R$ {x:,.2f}")
             
             fig_hist = px.bar(df_loja, x='Mes_PT', y='Mercadoria', title=f"Realizado vs Projetado: {filial_sel}", template="plotly_white", text='Valor_Texto') 
             fig_hist.add_scatter(x=df_loja['Mes_PT'], y=df_loja['Crescimento_Esperado'], mode='lines+markers', name='Projeção Teórica', line=dict(color='orange', width=3))
-            fig_hist.update_traces(marker_color='#3366CC', textposition='outside', selector=dict(type='bar'))
+            fig_hist.update_traces(marker_color='#3366CC', textposition='outside')
             st.plotly_chart(fig_hist, use_container_width=True)
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
@@ -259,17 +267,16 @@ if arquivos_dre:
             
             indices = {}
             for chave, texto in termos.items():
-                match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(texto, case=False, na=False)]
+                match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.contains(texto, case=False, na=False)]
                 if not match.empty: indices[chave] = match.index[0]
 
-            def pegar_v(chave):
+            def pegar_v(chave, col=3):
                 if chave in indices:
-                    val = df_dre_raw.iloc[indices[chave], 3] 
-                    return clean_numeric(val)
+                    return clean_numeric(df_dre_raw.iloc[indices[chave], col])
                 return 0.0
 
             vals = {k: pegar_v(k) for k in termos.keys()}
-            receita_base = vals['RL'] if vals['RL'] > 0 else (vals['RB'] if vals['RB'] > 0 else 1.0)
+            receita_base = vals['RL'] if vals['RL'] > 0 else 1.0
             perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
 
             c1, c2, c3, c4, c5 = st.columns(5) 
@@ -277,62 +284,34 @@ if arquivos_dre:
             c2.metric("Margem Contrib.", f"R$ {vals['MC']:,.2f}")
             c3.metric("Resultado Oper.", f"R$ {vals['RES']:,.2f}", delta_color="normal" if vals['RES'] >= 0 else "inverse")
             c4.metric("Quebras/Perdas", f"R$ {perdas_totais:,.2f}")
-            perc_cmv_head = (abs(vals['CMV']) / receita_base) * 100
-            c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{perc_cmv_head:.1f}%")
+            c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{(abs(vals['CMV'])/receita_base)*100:.1f}%")
 
             col_diag, col_graf = st.columns([1, 1])
             with col_diag:
-                perc_margem = (vals['MC'] / receita_base) * 100
-                perc_perda = (perdas_totais / receita_base) * 100
                 if vals['RES'] < 0: st.error(f"🔴 Déficit operacional de R$ {abs(vals['RES']):,.2f}")
-                if perc_margem < 35: st.warning(f"⚠️ Margem Baixa: {perc_margem:.2f}% (Meta: 35%)")
-                if perc_perda > 1.5: st.warning(f"⚠️ Quebra Elevada: {perc_perda:.2f}% (Meta: 0,66%)")
+                st.info(f"💡 Margem Atual: {(vals['MC']/receita_base)*100:.2f}%")
 
             with col_graf:
                 df_gastos = pd.DataFrame({
                     "Conta": ["Folha", "ADM", "Operação", "Quebra"],
                     "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
                 })
-                st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title=f"Distribuição de Custos"), use_container_width=True)
+                st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title="Custos"), use_container_width=True)
 
-            st.subheader("DRE Detalhado")
-            df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
-            cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
-            cols_percent = [i for i in range(2, len(df_exibicao.columns), 2) if i not in cols_valor]
-
-            def formatar_estilo_celula(val, tipo):
-                num = clean_numeric(val)
-                if num == 0 and (val == "" or val == "-"): return val
-                return f"{num:.2f}%" if tipo == "pct" else f"R$ {num:,.2f}"
-
-            df_final = df_exibicao.style
-            for col_idx in cols_percent:
-                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "pct"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
-            for col_idx in cols_valor:
-                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "val"), subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
-            st.dataframe(df_final, use_container_width=True, hide_index=True)
-
-            # --- PROJEÇÕES FINAIS ---
-            meses_positivos = 0
+            # Projeções de Equilíbrio
             if "RES" in indices:
-                row_res = df_dre_raw.iloc[indices["RES"]]
-                for i in range(3, len(row_res), 2):
-                    if clean_numeric(row_res[i]) > 0: meses_positivos += 1
-                
                 try:
                     f_at = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
-                    res_at = clean_numeric(row_res[29])
+                    res_at = clean_numeric(df_dre_raw.iloc[indices["RES"], 29])
                     cmv_at = abs(clean_numeric(df_dre_raw.iloc[indices["CMV"], 30]))
                     if cmv_at > 1: cmv_at /= 100
                     p_eq = f_at + (abs(res_at) / (1 - cmv_at)) if (1-cmv_at) > 0 else 0
-                    v_alvo = f_at + (abs(res_at) / 0.35)
                     
-                    r1, r2, r3 = st.columns(3)
-                    r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
-                    r2.success(f"**Ponto de Equilíbrio (CMV {cmv_at*100:.0f}%):** R$ {p_eq:,.2f}")
-                    r3.warning(f"**Venda Alvo (Margem 65%):** R$ {v_alvo:,.2f}")
+                    r1, r2 = st.columns(2)
+                    r1.success(f"**Ponto de Equilíbrio (CMV {cmv_at*100:.0f}%):** R$ {p_eq:,.2f}")
+                    r2.warning(f"**Venda Alvo (Margem 35%):** R$ {f_at + (abs(res_at)/0.35):,.2f}")
                 except: pass
             st.markdown("---")
 
         except Exception as e:
-            st.error(f"Erro ao processar {arquivo_dre.name}: {e}")
+            st.error(f"Erro ao processar DRE {arquivo_dre.name}: {e}")
