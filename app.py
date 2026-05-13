@@ -293,18 +293,18 @@ if arquivo_dre is not None:
         st.subheader("Tabela de Dados Financeiros Detalhada")
         df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
         
-        # --- AJUSTE NA LÓGICA DE CONTAGEM SOLICITADA ---
+        # --- AJUSTE NA LÓGICA DE CONTAGEM ---
         meses_positivos = 0
         venda_necessaria_idx29 = 0.0
         ponto_equilibrio_idx30 = 0.0
         
         if "RES" in indices:
             row_res = df_dre_raw.iloc[indices["RES"]]
-            # Percorre colunas de valores a partir da 3
+            # Inicia em 3 (primeira coluna de valores) e percorre as colunas
             for i in range(3, len(row_res)):
-                valor_bruto = str(row_res[i]).strip()
-                # AJUSTE: Conta apenas se tiver 'R$' no texto e o valor for positivo
-                if "R$" in valor_bruto:
+                valor_bruto = row_res[i]
+                # Valida se a célula não é vazia, não é apenas um traço e se o número limpo é positivo
+                if pd.notna(valor_bruto) and str(valor_bruto).strip() not in ["", "-", "0", "0.0"]:
                     num_limpo = clean_numeric(valor_bruto)
                     if num_limpo > 0:
                         meses_positivos += 1
@@ -320,10 +320,8 @@ if arquivo_dre is not None:
                 styles = ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
             if "RESULTADO OPERACIONAL" in texto:
                 for i in range(3, len(row)):
-                    # Realce visual apenas para quem tem R$ e é positivo
-                    val_str = str(row.iloc[i])
-                    val_num = clean_numeric(val_str)
-                    if "R$" in val_str and val_num > 0:
+                    val = clean_numeric(row.iloc[i])
+                    if val > 0:
                         styles[i] = 'background-color: #c8e6c9; font-weight: bold; color: #2e7d32;'
             return styles
 
@@ -357,6 +355,6 @@ if arquivo_dre is not None:
         elif meses_positivos > 0:
             st.write("⚠️ **Análise:** Operação oscilante. Requer atenção ao Ponto de Equilíbrio para estabilização.")
         else:
-            st.write("🚨 **Análise:** Unidade em déficit crítico ou sem dados monetários suficientes.")
+            st.write("🚨 **Análise:** Unidade em déficit crítico. Faturamento atual abaixo da Venda Necessária.")
 
     except Exception as e: st.error(f"Erro no DRE: {e}")
