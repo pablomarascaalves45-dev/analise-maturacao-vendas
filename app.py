@@ -257,6 +257,7 @@ if arquivos_dre:
             # --- AJUSTE: CÁLCULOS DE PONTO DE EQUILÍBRIO E VENDA ALVO SUGERIDA ---
             meses_positivos = 0
             p_equilibrio, v_alvo_sugerida = 0.0, 0.0
+            cmv_exibicao_real = 0.0
             
             if "RES" in indices:
                 row_res = df_dre_raw.iloc[indices["RES"]]
@@ -271,7 +272,8 @@ if arquivos_dre:
                     resultado_atual = clean_numeric(row_res[29])
                     
                     # 1. Cálculo do Ponto de Equilíbrio (Considera CMV Real do arquivo)
-                    cmv_perc_real = abs(clean_numeric(df_dre_raw.iloc[indices["CMV"], 30]))
+                    cmv_exibicao_real = clean_numeric(df_dre_raw.iloc[indices["CMV"], 30])
+                    cmv_perc_real = abs(cmv_exibicao_real)
                     if cmv_perc_real > 1: cmv_perc_real = cmv_perc_real / 100
                     margem_cont_real = 1 - cmv_perc_real
                     
@@ -294,8 +296,9 @@ if arquivos_dre:
 
             r1, r2, r3 = st.columns(3)
             r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
-            r2.success(f"**Ponto de Equilíbrio:** R$ {p_equilibrio:,.2f}")
-            r3.warning(f"**Venda Alvo Sugerida:** R$ {v_alvo_sugerida:,.2f}")
+            # Ajuste de Nomenclatura Dinâmica
+            r2.success(f"**Ponto de Equilíbrio CMV {abs(cmv_exibicao_real):.0f}%:** R$ {p_equilibrio:,.2f}")
+            r3.warning(f"**Venda Alvo Sugerida CMV 65%:** R$ {v_alvo_sugerida:,.2f}")
             st.markdown("---")
 
         except Exception as e:
