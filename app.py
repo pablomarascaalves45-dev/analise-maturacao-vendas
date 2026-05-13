@@ -48,7 +48,6 @@ if uploaded_file:
         qtd_lojas = len(df) 
         media_aluguel_perc = df['%Aluguel Mês'].mean()
 
-        # AJUSTE: Criado 4 colunas para dar evidência à quantidade de lojas
         c0, c1, c2, c3 = st.columns(4)
         
         c0.metric("Lojas Analisadas", f"{qtd_lojas}")
@@ -108,9 +107,22 @@ if uploaded_file:
         
         if lojas_repetidas:
             st.warning(f"Identificamos {len(lojas_repetidas)} lojas que estão no Top 10 tanto do Mês quanto do Acumulado:")
-            cols = st.columns(len(lojas_repetidas) if len(lojas_repetidas) <= 5 else 5)
-            for i, loja in enumerate(lojas_repetidas):
-                cols[i % 5].info(f"**{loja}**")
+            
+            # Ajuste dinâmico de colunas
+            cols = st.columns(3) # Fixado em 3 para acomodar melhor o texto detalhado
+            for i, loja in enumerate(sorted(lojas_repetidas)):
+                # Busca os dados específicos dessa loja no dataframe
+                dados_loja = df[df['Desc_CC'] == loja].iloc[0]
+                ro_mes = dados_loja['RO Mês']
+                ro_acum = dados_loja['RO Acum']
+                
+                # Exibição formatada dentro do balão
+                with cols[i % 3]:
+                    st.info(f"""
+                    **{loja}**
+                    * RO Mês: R$ {ro_mes:,.2f}
+                    * RO Acum: R$ {ro_acum:,.2f}
+                    """)
         else:
             st.success("Não há lojas repetidas entre os dois rankings de criticidade.")
 
