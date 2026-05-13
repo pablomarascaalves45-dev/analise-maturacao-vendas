@@ -27,7 +27,7 @@ def load_data(file):
                            .strip())
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
-            # AJUSTE SOLICITADO: Se o valor for decimal (ex: 0.04), converte para percentual inteiro (4.0)
+            # AJUSTE: Se o valor for decimal (ex: 0.04), converte para percentual inteiro (4.0)
             if col.startswith('%'):
                 if df[col].abs().mean() < 1.0:
                     df[col] = df[col] * 100
@@ -103,18 +103,21 @@ if uploaded_file:
         
         lojas_mes = set(top_negativas['Desc_CC'])
         lojas_acum = set(top_negativas_acum['Desc_CC'])
-        lojas_repetidas = lojas_mes.intersection(lojas_acum)
+        lojas_repetidas = sorted(list(lojas_mes.intersection(lojas_acum)))
         
         if lojas_repetidas:
-            st.info(f"Lojas presentes no Top 10 (Mês e Acumulado): {len(lojas_repetidas)}")
+            # Texto explicativo simples sem emojis
+            st.write(f"Lojas presentes no Top 10 (Mês e Acumulado): {len(lojas_repetidas)}")
             
-            cols = st.columns(2) 
-            for i, loja in enumerate(sorted(lojas_repetidas)):
+            # Criando colunas dinâmicas (ex: se tiver 4 lojas, cria 4 colunas lado a lado)
+            qtd_cols = len(lojas_repetidas)
+            cols = st.columns(qtd_cols) 
+            
+            for i, loja in enumerate(lojas_repetidas):
                 dados_loja = df[df['Desc_CC'] == loja].iloc[0]
                 
-                # Coleta de informações adicionais
+                # Coleta e formatação de dados
                 abertura = dados_loja['Inauguração']
-                # Formata data se for do tipo datetime
                 if isinstance(abertura, pd.Timestamp):
                     abertura = abertura.strftime('%d/%m/%Y')
                 
@@ -123,8 +126,9 @@ if uploaded_file:
                 aluguel = dados_loja['Aluguel Mês']
                 multa = dados_loja.get('Multa rescisória atual', 0)
                 
-                with cols[i % 2]:
-                    st.write(f"""
+                # Exibição dentro do balão azul (st.info)
+                with cols[i]:
+                    st.info(f"""
                     **{loja}**
                     - Data de Abertura: {abertura}
                     - RO Mês: R$ {ro_mes:,.2f}
@@ -132,7 +136,6 @@ if uploaded_file:
                     - Aluguel: R$ {aluguel:,.2f}
                     - Multa: R$ {multa:,.2f}
                     """)
-                    st.markdown("---")
         else:
             st.write("Não há recorrência de lojas entre os rankings selecionados.")
 
