@@ -154,6 +154,14 @@ st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 st.sidebar.header("3. Relatórios Financeiros")
 
+# FILTRO DE SELEÇÃO INICIALIZADO ANTES DO UPLOAD PARA PERMITIR POSICIONAMENTO SUPERIOR
+if "dre_file" in st.session_state and st.session_state.dre_file:
+    nomes_arquivos = [f.name for f in st.session_state.dre_file]
+    opcoes_filtro = ["Todas"] + nomes_arquivos
+    selecionados = st.sidebar.multiselect("Filtrar Unidades:", opcoes_filtro, default="Todas")
+else:
+    selecionados = ["Todas"]
+
 arquivos_dre = st.sidebar.file_uploader(
     "Upload de arquivos DRE:", 
     type=["xlsx", "xls", "csv"], 
@@ -162,11 +170,6 @@ arquivos_dre = st.sidebar.file_uploader(
 )
 
 if arquivos_dre:
-    # FILTRO DE SELEÇÃO DE LOJAS
-    nomes_arquivos = [f.name for f in arquivos_dre]
-    opcoes_filtro = ["Todas"] + nomes_arquivos
-    selecionados = st.sidebar.multiselect("Filtrar Unidades:", opcoes_filtro, default="Todas")
-
     # Lógica de filtragem
     if "Todas" in selecionados or not selecionados:
         arquivos_para_processar = arquivos_dre
