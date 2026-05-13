@@ -176,7 +176,7 @@ if arquivos_dre:
 
     for arquivo_dre in arquivos_para_processar:
         try:
-            st.markdown(f"### 🏢 Unidade: {arquivo_dre.name}")
+            st.markdown(f"### Unidade: {arquivo_dre.name}")
             df_dre_raw = pd.read_excel(arquivo_dre, header=None)
             
             termos = {
@@ -213,9 +213,9 @@ if arquivos_dre:
             with col_diag:
                 perc_margem = (vals['MC'] / receita_base) * 100
                 perc_perda = (perdas_totais / receita_base) * 100
-                if vals['RES'] < 0: st.error(f"🔴 Déficit operacional de R$ {abs(vals['RES']):,.2f}")
-                if perc_margem < 35: st.warning(f"⚠️ Margem Baixa: {perc_margem:.2f}% (Meta: 35%)")
-                if perc_perda > 1.5: st.warning(f"⚠️ Quebra Elevada: {perc_perda:.2f}% (Meta: 0,66%)")
+                if vals['RES'] < 0: st.error(f"Déficit operacional de R$ {abs(vals['RES']):,.2f}")
+                if perc_margem < 35: st.warning(f"Margem Baixa: {perc_margem:.2f}% (Meta: 35%)")
+                if perc_perda > 1.5: st.warning(f"Quebra Elevada: {perc_perda:.2f}% (Meta: 0,66%)")
 
             with col_graf:
                 df_gastos = pd.DataFrame({
@@ -254,7 +254,6 @@ if arquivos_dre:
                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            # --- AJUSTE CORRIGIDO: PONTO DE EQUILÍBRIO E EXIBIÇÃO DO CMV ---
             meses_positivos = 0
             p_equilibrio, v_alvo_sugerida = 0.0, 0.0
             cmv_exibicao_formatado = 0.0
@@ -268,19 +267,12 @@ if arquivos_dre:
                 try:
                     faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
                     resultado_atual = clean_numeric(row_res[29])
-                    
-                    # Captura o CMV da coluna 30
                     cmv_bruto = clean_numeric(df_dre_raw.iloc[indices["CMV"], 30])
-                    
-                    # Normalização Inteligente:
-                    # Se vier 0.66 (decimal), usamos 0.66. Se vier 66.0 (inteiro), dividimos por 100.
                     cmv_para_calculo = abs(cmv_bruto)
                     if cmv_para_calculo > 1: 
                         cmv_para_calculo = cmv_para_calculo / 100
                     
-                    # Valor para aparecer no texto (Sempre em escala 0-100)
                     cmv_exibicao_formatado = cmv_para_calculo * 100
-                    
                     margem_cont_real = 1 - cmv_para_calculo
                     
                     if margem_cont_real > 0:
@@ -288,15 +280,14 @@ if arquivos_dre:
                     else:
                         p_equilibrio = 0.0
 
-                    v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / 0.35) # Meta 35% Margem
+                    v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / 0.35)
                 except:
                     p_equilibrio, v_alvo_sugerida = 0.0, 0.0
 
             r1, r2, r3 = st.columns(3)
-            r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
-            # Agora exibe o percentual correto (66% em vez de 1%)
-            r2.success(f"**Ponto de Equilíbrio CMV {cmv_exibicao_formatado:.0f}%:** R$ {p_equilibrio:,.2f}")
-            r3.warning(f"**Venda Alvo Sugerida CMV 65%:** R$ {v_alvo_sugerida:,.2f}")
+            r1.info(f"Histórico Positivo: {meses_positivos} meses")
+            r2.success(f"Ponto de Equilíbrio CMV {cmv_exibicao_formatado:.0f}%: R$ {p_equilibrio:,.2f}")
+            r3.warning(f"Venda Alvo Sugerida CMV 65%: R$ {v_alvo_sugerida:,.2f}")
             st.markdown("---")
 
         except Exception as e:
