@@ -154,7 +154,6 @@ st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 st.sidebar.header("3. Relatórios Financeiros")
 
-# Filtro de Unidades
 if "dre_file" in st.session_state and st.session_state.dre_file:
     nomes_arquivos = [f.name for f in st.session_state.dre_file]
     opcoes_filtro = ["Todas"] + nomes_arquivos
@@ -225,10 +224,8 @@ if arquivos_dre:
                 })
                 st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title=f"Distribuição de Custos"), use_container_width=True)
 
-            # --- PARTE AJUSTADA CONFORME O CÓDIGO ANTIGO ---
             st.subheader("DRE Detalhado")
             df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
-
             cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
             cols_percent = [i for i in range(2, len(df_exibicao.columns), 2) if i not in cols_valor]
 
@@ -249,32 +246,49 @@ if arquivos_dre:
                 return styles
 
             df_final = df_exibicao.style.apply(aplicar_estilo_mestre, axis=1)
-
             for col_idx in cols_percent:
                 df_final = df_final.format(lambda x: formatar_estilo_celula(x, "pct"), 
                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
-
             for col_idx in cols_valor:
                 df_final = df_final.format(lambda x: formatar_estilo_celula(x, "val"), 
                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
-
             st.dataframe(df_final, use_container_width=True, hide_index=True)
-            # --- FIM DA PARTE AJUSTADA ---
 
-            # Resumo de Viabilidade
+            # --- AJUSTE SOLICITADO: CÁLCULO DA VENDA ALVO SUGERIDA ---
             meses_positivos = 0
             v_necessaria, p_equilibrio = 0.0, 0.0
+            
             if "RES" in indices:
                 row_res = df_dre_raw.iloc[indices["RES"]]
-                # AJUSTE SOLICITADO: Pula de 2 em 2 colunas para contar apenas as colunas de Valor (R$)
-                # Começa em 3 (primeiro valor R$), depois 5, 7, etc. Ignorando as colunas 4, 6, 8 (Percentuais)
                 for i in range(3, len(row_res), 2):
                     if clean_numeric(row_res[i]) > 0: 
                         meses_positivos += 1
                 
-                if len(row_res) > 30:
-                    v_necessaria = clean_numeric(row_res[29])
-                    p_equilibrio = clean_numeric(row_res[30])
+                try:
+                    # Faturamento atual (Receita Líquida) na coluna índice 29
+                    faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
+                    
+                    # CMV % na linha CMV, coluna índice 30
+                    cmv_perc = abs(clean_numeric(df_dre_raw.iloc[indices["CMV"], 30]))
+                    # Se vier como 66 em vez de 0.66, normaliza
+                    if cmv_perc > 1: cmv_perc = cmv_perc / 100
+                    
+                    # Resultado (Prejuízo) na linha Resultado Operacional, coluna índice 29
+                    resultado_atual = clean_numeric(row_res[29])
+                    
+                    # Margem de Contribuição % = 100% - CMV%
+                    margem_cont_perc = 1 - cmv_perc
+                    
+                    if margem_cont_perc > 0:
+                        # Venda Alvo = Faturamento Atual + (Valor do Prejuízo / % de Margem)
+                        v_necessaria = faturamento_atual + (abs(resultado_atual) / margem_cont_perc)
+                    else:
+                        v_necessaria = 0.0
+
+                    if len(row_res) > 30:
+                        p_equilibrio = clean_numeric(row_res[30])
+                except:
+                    v_necessaria = 0.0
 
             r1, r2, r3 = st.columns(3)
             r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
