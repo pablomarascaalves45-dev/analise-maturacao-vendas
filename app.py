@@ -109,7 +109,7 @@ if arquivo_subido is not None:
         st.error(f"Erro no processamento da projeção: {e}")
 
 # ==============================================================================
-# NOVA SEÇÃO: 2. DIAGNÓSTICO INVESTIGATIVO (PLANILHA DE NEGATIVAS)
+# 2. DIAGNÓSTICO INVESTIGATIVO (PLANILHA DE NEGATIVAS)
 # ==============================================================================
 st.markdown("---")
 st.header("2. Diagnóstico Investigativo: Expansão e Negativas")
@@ -128,20 +128,25 @@ if arquivo_negativas is not None:
         else:
             df_neg = pd.read_excel(arquivo_negativas)
 
-        # Normalização de Colunas
+        # Normalização de Colunas (Remove espaços e caracteres invisíveis)
         df_neg.columns = [str(c).strip() for c in df_neg.columns]
         
-        # Mapeamento de colunas financeiras
-        col_ro_mes = 'RO Mês' if 'RO Mês' in df_neg.columns else df_neg.columns[5]
-        col_ro_acum = 'RO Acum' if 'RO Acum' in df_neg.columns else df_neg.columns[7]
-        col_multa = 'Multa rescisória atual' if 'Multa rescisória atual' in df_neg.columns else df_neg.columns[12]
+        # Mapeamento dinâmico de colunas financeiras
+        def find_column(options, current_cols):
+            for opt in options:
+                if opt in current_cols: return opt
+            return None
+
+        col_ro_mes = find_column(['RO Mês', 'RO Mes', 'Resultado Operacional Mês'], df_neg.columns) or df_neg.columns[5]
+        col_ro_acum = find_column(['RO Acum', 'RO Acumulado', 'Resultado Acumulado'], df_neg.columns) or df_neg.columns[7]
+        col_multa = find_column(['Multa rescisória atual', 'Multa'], df_neg.columns) or df_neg.columns[12]
 
         # Conversão numérica
         df_neg[col_ro_mes] = df_neg[col_ro_mes].apply(clean_numeric)
         df_neg[col_ro_acum] = df_neg[col_ro_acum].apply(clean_numeric)
         df_neg[col_multa] = df_neg[col_multa].apply(clean_numeric)
 
-        # Cálculo das Métricas Solicitadas
+        # Cálculo das Métricas
         total_lojas = len(df_neg)
         prejuizo_mes = df_neg[df_neg[col_ro_mes] < 0][col_ro_mes].sum()
         prejuizo_acum = df_neg[df_neg[col_ro_acum] < 0][col_ro_acum].sum()
@@ -156,7 +161,6 @@ if arquivo_negativas is not None:
 
         # Gráficos de Diagnóstico
         g1, g2 = st.columns(2)
-        
         with g1:
             st.write("**📡 Densidade Competitiva vs Resultado**")
             col_redes = [c for c in df_neg.columns if 'Total Redes' in c or 'Qtd_Total' in c]
@@ -330,7 +334,7 @@ if arquivos_dre:
                     r1, r2, r3 = st.columns(3)
                     r1.info(f"**Histórico Positivo:** {meses_positivos} meses")
                     r2.success(f"**Ponto de Equilíbrio (CMV {cmv_at*100:.0f}%):** R$ {p_eq:,.2f}")
-                    r3.warning(f"**Venda Alvo (Margem 65%):** R$ {v_alvo:,.2f}")
+                    r3.warning(f"**Venda Alvo (Margem 35%):** R$ {v_alvo:,.2f}")
                 except: pass
             st.markdown("---")
 
