@@ -13,8 +13,8 @@ st.markdown("---")
 def load_data(file):
     df = pd.read_excel(file)
     
-    # Remove espaços em branco dos nomes das colunas
-    df.columns = df.columns.str.strip()
+    # Ajuste: Garantir que a limpeza de nomes de colunas seja feita corretamente
+    df.columns = [str(c).strip() for c in df.columns]
     
     # Lista de colunas financeiras para conversão numérica
     cols_financeiras = ['RO Mês', 'RO Acum', 'Aluguel Mês', '%RO Mês', '%RO Acum', '%Aluguel Mês', 'Multa rescisória atual']
@@ -111,10 +111,11 @@ if uploaded_file:
                                    color='Multa rescisória atual', color_continuous_scale='Oranges')
                 st.plotly_chart(fig_multa, use_container_width=True)
 
-        # --- ANÁLISE DE CARACTERÍSTICAS DOS PONTOS ---
+        # --- ANÁLISE DE CARACTERÍSTICAS DOS PONTOS (SEM CALÇADÃO) ---
         st.markdown("---")
         st.subheader("Análise Qualitativa: Características dos Pontos Críticos")
-        cols_perfil = ["Posição Loja", "Próximo a mercado", "Vagas", "Calçadão", "Loja atualizada"]
+        # Removido "Calçadão" da lista abaixo
+        cols_perfil = ["Posição Loja", "Próximo a mercado", "Vagas", "Loja atualizada"]
         cols_existentes = [c for c in cols_perfil if c in df.columns]
 
         if cols_existentes:
@@ -134,7 +135,6 @@ if uploaded_file:
         cols_conc_encontradas = [c for c in df.columns if any(conc.lower() in c.lower() for conc in concorrentes_lista)]
 
         if cols_conc_encontradas:
-            # Consolida dados de presença (considera qualquer marcação 'Sim', 'X', 'S' ou número > 0)
             contagem_concorrentes = {}
             for col in cols_conc_encontradas:
                 filtro_presenca = df[col].astype(str).str.lower().isin(['sim', 'x', 's', '1', '1.0'])
@@ -151,7 +151,7 @@ if uploaded_file:
                 st.plotly_chart(fig_conc, use_container_width=True)
             with col_c2:
                 st.info("**Análise de Densidade**")
-                st.write("O gráfico ao lado indica quais bandeiras concorrentes possuem maior sobreposição geográfica com suas unidades de baixo desempenho. Uma alta frequência de 'SaoJoao' ou 'Panvel' pode indicar saturação de mercado nessas praças específicas.")
+                st.write("O gráfico ao lado indica quais bandeiras concorrentes possuem maior sobreposição geográfica com suas unidades de baixo desempenho.")
         else:
             st.info("Colunas de concorrentes não identificadas na planilha.")
 
