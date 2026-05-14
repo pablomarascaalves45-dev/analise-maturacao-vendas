@@ -26,8 +26,10 @@ def clean_numeric(val):
 @st.cache_data
 def load_data_negativas(file):
     df = pd.read_excel(file)
+    # Garantir que a limpeza de nomes de colunas seja feita corretamente
     df.columns = [str(c).strip() for c in df.columns]
     
+    # Lista de colunas financeiras para conversão numérica
     cols_financeiras = ['RO Mês', 'RO Acum', 'Aluguel Mês', '%RO Mês', '%RO Acum', '%Aluguel Mês', 'Multa rescisória atual']
     
     for col in cols_financeiras:
@@ -41,13 +43,11 @@ def load_data_negativas(file):
                            .str.strip())
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
+            # Ajuste de escala percentual
             if col.startswith('%'):
                 if df[col].abs().mean() < 1.0:
                     df[col] = df[col] * 100
     return df
-
-# --- ESTADOS COMPARTILHADOS ---
-taxas = []
 
 # 2. PROJEÇÃO DE CRESCIMENTO (SEÇÃO 1)
 st.sidebar.header("1. Parâmetros de Projeção")
@@ -56,6 +56,8 @@ arquivo_subido = st.sidebar.file_uploader(
     type=["xlsx", "xls", "csv"], 
     key="proj_file"
 )
+
+taxas = []
 
 if arquivo_subido is not None:
     try:
@@ -99,7 +101,6 @@ if arquivo_subido is not None:
             df_res["% Maturação"] = (df_res["Faturamento"] / valor_estudo) * 100
             meses_grafico = [1, 3, 6, 9, 12, 18, 24, 30, 36]
 
-            st.header("Análise de Maturação")
             c1, c2 = st.columns([2, 1])
             with c1:
                 fig = px.line(df_res, x="Mês", y="Faturamento", markers=True, 
@@ -138,14 +139,16 @@ arquivo_historico = st.sidebar.file_uploader(
     key="hist_file"
 )
 
-df_loja_global = None
+# Variável para armazenar dados da filial para a seção 5
+df_loja_selecionada = None
+filial_nome_selecionada = ""
+
 if arquivo_historico is not None:
     try:
         df_hist = pd.read_csv(arquivo_historico, decimal='.', engine='python') if "csv" in arquivo_historico.name.lower() else pd.read_excel(arquivo_historico)
 
         if 'Desc_Filial' in df_hist.columns:
             filiais = sorted(df_hist['Desc_Filial'].unique())
-            st.header("Análise de Histórico")
             filial_sel = st.selectbox("Filial para comparação:", filiais)
             df_loja = df_hist[df_hist['Desc_Filial'] == filial_sel].copy().sort_values(by='AnoMes')
             
@@ -169,7 +172,10 @@ if arquivo_historico is not None:
 
             df_loja['Mes_PT'] = df_loja['AnoMes'].apply(formatar_mes_pt)
             df_loja['Valor_Texto'] = df_loja['Mercadoria'].apply(lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
-            df_loja_global = df_loja # Para uso no Dashboard Consolidado
+            
+            # Salva para uso na seção 5
+            df_loja_selecionada = df_loja
+            filial_nome_selecionada = filial_sel
             
             fig_hist = px.bar(df_loja, x='Mes_PT', y='Mercadoria', title=f"Realizado vs Projetado: {filial_sel}", template="plotly_white", text='Valor_Texto') 
             fig_hist.add_scatter(x=df_loja['Mes_PT'], y=df_loja['Crescimento_Esperado'], mode='lines+markers', name='Projeção Teórica', line=dict(color='orange', width=3))
@@ -178,7 +184,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
-# --- SEÇÃO 3: ANÁLISE DE LOJAS NEGATIVAS ---
+# --- SUBSTITUIÇÃO DA SEÇÃO 3: ANÁLISE DE LOJAS NEGATIVAS ---
 st.markdown("---")
 st.header("Análise Estratégica: Performance de Unidades Negativas")
 st.sidebar.header("3. Unidades Negativas")
@@ -192,6 +198,8 @@ arquivo_negativas = st.sidebar.file_uploader(
 if arquivo_negativas:
     try:
         df = load_data_negativas(arquivo_negativas)
+        
+        # --- DASHBOARD DE MÉTRICAS ---
         total_prejuizo_mes = df['RO Mês'].sum()
         total_prejuizo_acum = df['RO Acum'].sum()
         qtd_lojas = len(df) 
@@ -203,6 +211,7 @@ if arquivo_negativas:
         c2.metric("Prejuízo Acumulado", f"R$ {total_prejuizo_acum:,.2f}")
         c3.metric("Média % Aluguel", f"{media_aluguel_perc:.2f}%")
 
+        # --- ANÁLISE GRÁFICA (MÊS) ---
         col_graf1, col_graf2 = st.columns(2)
         with col_graf1:
             st.subheader("Top 10 Unidades Críticas (Mês)")
@@ -218,8 +227,193 @@ if arquivo_negativas:
                                   size='Aluguel Mês', color='Diretor' if 'Diretor' in df.columns else None)
             fig_scat.update_layout(xaxis_ticksuffix="%")
             st.plotly_chart(fig_scat, use_container_width=True)
+
+        st.markdown("---")
+        
+        # --- ANÁLISE GRÁFICA (ACUMULADO) ---
+        col_graf3, col_graf4 = st.columns(2)
+        with col_graf3:
+            st.subheader("Top 10 Unidades Críticas (Acumulado)")
+            top_negativas_acum = df.nsmallest(10, 'RO Acum')
+            fig_neg_acum = px.bar(top_negativas_acum, x='RO Acum', y='Desc_CC', orientation='h',
+                                  color='RO Acum', color_continuous_scale='Reds_r')
+            fig_neg_acum.update_layout(yaxis={'categoryorder':'total ascending'})
+            st.plotly_chart(fig_neg_acum, use_container_width=True)
+
+        with col_graf4:
+            st.subheader("Aluguel vs Resultado (Acumulado)")
+            fig_scat_acum = px.scatter(df, x='%Aluguel Mês', y='RO Acum', hover_name='Desc_CC', 
+                                       size='Aluguel Mês', color='Diretor' if 'Diretor' in df.columns else None)
+            fig_scat_acum.update_layout(xaxis_ticksuffix="%")
+            st.plotly_chart(fig_scat_acum, use_container_width=True)
+
+        # --- RANKINGS DE CUSTO ---
+        st.markdown("---")
+        col_rank1, col_rank2 = st.columns(2)
+        with col_rank1:
+            st.subheader("Top 10 Maiores Aluguéis")
+            top_aluguel = df.nlargest(10, 'Aluguel Mês')
+            fig_aluguel = px.bar(top_aluguel, x='Aluguel Mês', y='Desc_CC', orientation='h',
+                                 color='Aluguel Mês', color_continuous_scale='Blues')
+            st.plotly_chart(fig_aluguel, use_container_width=True)
+
+        with col_rank2:
+            st.subheader("Top 10 Maiores Multas")
+            if 'Multa rescisória atual' in df.columns:
+                top_multa = df.nlargest(10, 'Multa rescisória atual')
+                fig_multa = px.bar(top_multa, x='Multa rescisória atual', y='Desc_CC', orientation='h',
+                                   color='Multa rescisória atual', color_continuous_scale='Oranges')
+                st.plotly_chart(fig_multa, use_container_width=True)
+
+        # --- ANÁLISE DE CARACTERÍSTICAS DOS PONTOS ---
+        st.markdown("---")
+        st.subheader("Análise Qualitativa: Características dos Pontos Críticos")
+        cols_perfil = ["Posição Loja", "Próximo a mercado", "Vagas", "Loja atualizada"]
+        cols_existentes = [c for c in cols_perfil if c in df.columns]
+
+        if cols_existentes:
+            c_p1, c_p2 = st.columns(2)
+            for idx, col in enumerate(cols_existentes):
+                target = c_p1 if idx % 2 == 0 else c_p2
+                df_p = df[col].value_counts().reset_index()
+                df_p.columns = [col, 'Quantidade']
+                fig = px.pie(df_p, values='Quantidade', names=col, title=f"Perfil: {col}", hole=0.4)
+                target.plotly_chart(fig, use_container_width=True)
+
+        # --- SEÇÃO: POLOS GERADORES DE TRÁFEGO ---
+        st.markdown("---")
+        st.subheader("Polos Geradores de Tráfego")
+        polos_lista = ["Aliment", "Ensin", "Saúd", "Banco", "Bem-est"]
+        cols_polos_encontradas = [c for c in df.columns if any(p.lower() in c.lower() for p in polos_lista)]
+
+        if cols_polos_encontradas:
+            contagem_polos = {}
+            for col in cols_polos_encontradas:
+                filtro_presenca = df[col].astype(str).str.lower().isin(['sim', 'x', 's', '1', '1.0'])
+                contagem_polos[col] = df[filtro_presenca].shape[0]
+            
+            df_polos = pd.DataFrame(list(contagem_polos.items()), columns=['Tipo de Polo', 'Incidência'])
+            df_polos = df_polos.sort_values(by='Incidência', ascending=False)
+            col_p1, col_p2 = st.columns([2, 1])
+            with col_p1:
+                fig_polos = px.bar(df_polos, x='Tipo de Polo', y='Incidência', 
+                                  title="Presença de Polos Geradores nas Unidades Negativas",
+                                  color='Incidência', color_continuous_scale='Viridis')
+                st.plotly_chart(fig_polos, use_container_width=True)
+            with col_p2:
+                st.info("**Análise de Tráfego**")
+                st.write("Esta visão demonstra quais tipos de estabelecimentos vizinhos são mais comuns nas lojas com RO negativo.")
+
+        # --- SEÇÃO: ANÁLISE DE CONCORRÊNCIA ---
+        st.markdown("---")
+        st.subheader("Análise de Concorrência: Impacto na Performance")
+        concorrentes_lista = ["SaoJoao", "Independente", "Panvel", "Raia", "Morifarma", "Nissei", "PPCatarinense", "Pacheco", "FarmTrabalhador"]
+        cols_conc_encontradas = [c for c in df.columns if any(conc.lower() in c.lower() for conc in concorrentes_lista)]
+
+        if cols_conc_encontradas:
+            contagem_concorrentes = {}
+            for col in cols_conc_encontradas:
+                filtro_presenca = df[col].astype(str).str.lower().isin(['sim', 'x', 's', '1', '1.0'])
+                contagem_concorrentes[col] = df[filtro_presenca].shape[0]
+            
+            df_conc = pd.DataFrame(list(contagem_concorrentes.items()), columns=['Rede', 'Lojas Próximas'])
+            df_conc = df_conc.sort_values(by='Lojas Próximas', ascending=False)
+            col_c1, col_c2 = st.columns([2, 1])
+            with col_c1:
+                fig_conc = px.bar(df_conc, x='Rede', y='Lojas Próximas', 
+                                  title="Incidência de Concorrentes nas Unidades Negativas",
+                                  color='Lojas Próximas', color_continuous_scale='Turbo')
+                st.plotly_chart(fig_conc, use_container_width=True)
+            with col_c2:
+                st.info("**Análise de Densidade**")
+                st.write("O gráfico ao lado indica quais bandeiras concorrentes possuem maior sobreposição geográfica.")
+
+        # --- CRUZAMENTO DE DADOS: UNIDADES CRÍTICAS RECORRENTES ---
+        st.markdown("---")
+        st.subheader("Cruzamento de Dados: Unidades Críticas Recorrentes")
+        
+        lojas_mes = set(top_negativas['Desc_CC'])
+        lojas_acum = set(top_negativas_acum['Desc_CC'])
+        lojas_repetidas = sorted(list(lojas_mes.intersection(lojas_acum)))
+        
+        if lojas_repetidas:
+            st.write(f"Lojas presentes no Top 10 (Mês e Acumulado): {len(lojas_repetidas)}")
+            cols_rep = st.columns(len(lojas_repetidas)) 
+            
+            for i, loja in enumerate(lojas_repetidas):
+                dados_loja = df[df['Desc_CC'] == loja].iloc[0]
+                
+                conc_loja = {}
+                for col in cols_conc_encontradas:
+                    val = str(dados_loja[col]).lower()
+                    if val in ['sim', 'x', 's', '1', '1.0']:
+                        conc_loja[col] = 1
+                top_3_conc = sorted(conc_loja.items(), key=lambda x: x[1], reverse=True)[:3]
+                str_conc = " / ".join([f"{c[0]}: {c[1]}" for c in top_3_conc]) if top_3_conc else "Nenhum mapeado"
+
+                polos_loja = [col for col in cols_polos_encontradas if str(dados_loja[col]).lower() in ['sim', 'x', 's', '1', '1.0']]
+                str_polos = ", ".join(polos_loja[:3]) if polos_loja else "Nenhum mapeado"
+
+                with cols_rep[i]:
+                    st.info(f"""
+                    **{loja}**
+                    
+                    **Financeiro:**
+                    * RO Mês: R$ {dados_loja['RO Mês']:,.2f}
+                    * RO Acum: R$ {dados_loja['RO Acum']:,.2f}
+                    * Aluguel: R$ {dados_loja['Aluguel Mês']:,.2f}
+                    
+                    **Vizinhança:**
+                    * 🏁 {str_conc}
+                    * 📍 {str_polos}
+                    """)
+        else:
+            st.write("Não há recorrência de lojas entre os rankings.")
+
+        # --- NOVA SEÇÃO: DEMAIS UNIDADES NEGATIVAS ---
+        st.markdown("---")
+        st.subheader("Demais Unidades com Performance Negativa")
+        
+        df_restante = df[~df['Desc_CC'].isin(lojas_repetidas)].copy()
+        df_restante = df_restante.sort_values(by='RO Mês', ascending=True)
+        
+        if not df_restante.empty:
+            cols_restante = st.columns(4)
+            for idx, (_, dados_loja) in enumerate(df_restante.iterrows()):
+                col_idx = idx % 4
+                loja_nome = dados_loja['Desc_CC']
+                
+                conc_loja = {}
+                for col in cols_conc_encontradas:
+                    val = str(dados_loja[col]).lower()
+                    if val in ['sim', 'x', 's', '1', '1.0']:
+                        conc_loja[col] = 1
+                top_3_conc = sorted(conc_loja.items(), key=lambda x: x[1], reverse=True)[:3]
+                str_conc = " / ".join([f"{c[0]}: {c[1]}" for c in top_3_conc]) if top_3_conc else "Nenhum mapeado"
+
+                polos_loja = [col for col in cols_polos_encontradas if str(dados_loja[col]).lower() in ['sim', 'x', 's', '1', '1.0']]
+                str_polos = ", ".join(polos_loja[:3]) if polos_loja else "Nenhum mapeado"
+
+                with cols_restante[col_idx]:
+                    st.warning(f"""
+                    **{loja_nome}**
+                    
+                    **Financeiro:**
+                    * RO Mês: R$ {dados_loja['RO Mês']:,.2f}
+                    * RO Acum: R$ {dados_loja['RO Acum']:,.2f}
+                    * Aluguel: R$ {dados_loja['Aluguel Mês']:,.2f}
+                    
+                    **Vizinhança:**
+                    * 🏁 {str_conc}
+                    * 📍 {str_polos}
+                    """)
+        else:
+            st.write("Não há outras unidades negativas registradas.")
+
     except Exception as e:
         st.error(f"Erro ao processar lojas negativas: {e}")
+else:
+    st.info("Faça o upload do arquivo de Lojas Negativas para ativar esta seção.")
 
 # 4. ANÁLISE FINANCEIRA (DRE) (SEÇÃO 4)
 st.markdown("---")
@@ -236,18 +430,37 @@ arquivos_dre = st.sidebar.file_uploader(
 if arquivos_dre:
     nomes_arquivos = [f.name for f in arquivos_dre]
     selecionados = st.sidebar.multiselect("Filtrar Unidades DRE:", ["Todas"] + nomes_arquivos, default="Todas")
-    arquivos_para_processar = arquivos_dre if ("Todas" in selecionados or not selecionados) else [f for f in arquivos_dre if f.name in selecionados]
+
+    if "Todas" in selecionados or not selecionados:
+        arquivos_para_processar = arquivos_dre
+    else:
+        arquivos_para_processar = [f for f in arquivos_dre if f.name in selecionados]
 
     for arquivo_dre in arquivos_para_processar:
         try:
             st.markdown(f"### Unidade: {arquivo_dre.name}")
             df_dre_raw = pd.read_excel(arquivo_dre, header=None)
-            termos = {"RB": "Receita Bruta", "RL": "Receita Líquida", "MC": "Margem de Contribuição", "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque", "FOLHA": "Despesas Folha", "ADM": "Despesas ADM", "OPER": "Despesas Operação", "RES": "Resultado Operacional", "CMV": "CMV"}
-            indices = {k: df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(v, case=False, na=False)].index[0] for k, v in termos.items() if not df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(v, case=False, na=False)].empty}
+            
+            termos = {
+                "RB": "Receita Bruta", "RL": "Receita Líquida", "MC": "Margem de Contribuição",
+                "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque",
+                "FOLHA": "Despesas Folha", "ADM": "Despesas ADM", "OPER": "Despesas Operação",
+                "RES": "Resultado Operacional", "CMV": "CMV"
+            }
+            
+            indices = {}
+            for chave, texto in termos.items():
+                match = df_dre_raw[df_dre_raw.iloc[:, 1].astype(str).str.strip().str.contains(texto, case=False, na=False)]
+                if not match.empty: indices[chave] = match.index[0]
 
-            def pegar_v(chave): return clean_numeric(df_dre_raw.iloc[indices[chave], 3]) if chave in indices else 0.0
+            def pegar_v(chave):
+                if chave in indices:
+                    val = df_dre_raw.iloc[indices[chave], 3] 
+                    return clean_numeric(val)
+                return 0.0
+
             vals = {k: pegar_v(k) for k in termos.keys()}
-            receita_base = vals['RL'] if vals['RL'] > 0 else 1.0
+            receita_base = vals['RL'] if vals['RL'] > 0 else (vals['RB'] if vals['RB'] > 0 else 1.0)
             perdas_totais = abs(vals['PVL']) + abs(vals['DISC'])
 
             c1, c2, c3, c4, c5 = st.columns(5) 
@@ -258,90 +471,177 @@ if arquivos_dre:
             perc_cmv_head = (abs(vals['CMV']) / receita_base) * 100
             c5.metric("CMV", f"R$ {abs(vals['CMV']):,.2f}", delta=f"{perc_cmv_head:.1f}%")
 
-            # Dashboard Compacto Detalhado
-            st.dataframe(df_dre_raw.dropna(axis=1, how='all').fillna(""), use_container_width=True, hide_index=True)
-        except Exception as e:
-            st.error(f"Erro no DRE {arquivo_dre.name}: {e}")
+            col_diag, col_graf = st.columns([1, 1])
+            with col_diag:
+                perc_margem = (vals['MC'] / receita_base) * 100
+                perc_perda = (perdas_totais / receita_base) * 100
+                if vals['RES'] < 0: st.error(f"Déficit operacional de R$ {abs(vals['RES']):,.2f}")
+                if perc_margem < 35: st.warning(f"Margem Baixa: {perc_margem:.2f}% (Meta: 35%)")
+                if perc_perda > 1.5: st.warning(f"Quebra Elevada: {perc_perda:.2f}% (Meta: 0,66%)")
 
-# --- NOVO: 5. DASHBOARD EXECUTIVO CONSOLIDADO (CONFORME IMAGEM) ---
+            with col_graf:
+                df_gastos = pd.DataFrame({
+                    "Conta": ["Folha", "ADM", "Operação", "Quebra"],
+                    "Valor": [abs(vals['FOLHA']), abs(vals['ADM']), abs(vals['OPER']), perdas_totais]
+                })
+                st.plotly_chart(px.pie(df_gastos, values='Valor', names='Conta', hole=0.4, title=f"Distribuição de Custos"), use_container_width=True)
+
+            st.subheader("DRE Detalhado")
+            df_exibicao = df_dre_raw.dropna(axis=1, how='all').fillna("")
+            cols_valor = [i for i in range(3, len(df_exibicao.columns), 2)]
+            cols_percent = [i for i in range(2, len(df_exibicao.columns), 2) if i not in cols_valor]
+
+            def formatar_estilo_celula(val, tipo):
+                num = clean_numeric(val)
+                if num == 0 and (val == "" or val == "-"): return val
+                return f"{num:.2f}%" if tipo == "pct" else f"R$ {num:,.2f}"
+
+            def aplicar_estilo_mestre(row):
+                styles = [''] * len(row)
+                texto = str(row.iloc[1]).upper()
+                if any(c in texto for c in ["RECEITA LÍQUIDA", "MARGEM DE CONTRIBUIÇÃO", "RESULTADO OPERACIONAL"]):
+                    styles = ['background-color: #f8f9fa; font-weight: bold;'] * len(row)
+                if "RESULTADO OPERACIONAL" in texto:
+                    for i in range(3, len(row)):
+                        if clean_numeric(row.iloc[i]) > 0:
+                            styles[i] = 'background-color: #c8e6c9; color: #2e7d32; font-weight: bold;'
+                return styles
+
+            df_final = df_exibicao.style.apply(aplicar_estilo_mestre, axis=1)
+            for col_idx in cols_percent:
+                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "pct"), 
+                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+            for col_idx in cols_valor:
+                df_final = df_final.format(lambda x: formatar_estilo_celula(x, "val"), 
+                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+            st.dataframe(df_final, use_container_width=True, hide_index=True)
+
+            meses_positivos = 0
+            p_equilibrio, v_alvo_sugerida = 0.0, 0.0
+            cmv_exibicao_formatado = 0.0
+            
+            if "RES" in indices:
+                row_res = df_dre_raw.iloc[indices["RES"]]
+                for i in range(3, len(row_res), 2):
+                    if clean_numeric(row_res[i]) > 0: 
+                        meses_positivos += 1
+                
+                try:
+                    faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
+                    resultado_atual = clean_numeric(row_res[29])
+                    cmv_bruto = clean_numeric(df_dre_raw.iloc[indices["CMV"], 30])
+                    cmv_para_calculo = abs(cmv_bruto)
+                    if cmv_para_calculo > 1: 
+                        cmv_para_calculo = cmv_para_calculo / 100
+                    
+                    cmv_exibicao_formatado = cmv_para_calculo * 100
+                    margem_cont_real = 1 - cmv_para_calculo
+                    
+                    if margem_cont_real > 0:
+                        p_equilibrio = faturamento_atual + (abs(resultado_atual) / margem_cont_real)
+                    else:
+                        p_equilibrio = 0.0
+
+                    v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / 0.35)
+                except:
+                    p_equilibrio, v_alvo_sugerida = 0.0, 0.0
+
+            r1, r2, r3 = st.columns(3)
+            r1.info(f"Histórico Positivo: {meses_positivos} meses")
+            r2.success(f"Ponto de Equilíbrio CMV {cmv_exibicao_formatado:.0f}%: R$ {p_equilibrio:,.2f}")
+            r3.warning(f"Venda Alvo Sugerida CMV 65%: R$ {v_alvo_sugerida:,.2f}")
+            st.markdown("---")
+
+        except Exception as e:
+            st.error(f"Erro ao processar {arquivo_dre.name}: {e}")
+
+# --- NOVA SEÇÃO 5: DASHBOARD EXECUTIVO (CONFORME IMAGEM image_84e5f6.png) ---
 st.markdown("---")
-st.header("5. Dashboard Executivo Consolidado")
-st.sidebar.header("5. Configuração Executiva")
+st.header("5. Dashboard Executivo Consolidação")
+st.sidebar.header("5. Dashboard Executivo")
 
 if arquivos_dre and arquivo_historico:
-    escolha_dre = st.selectbox("Selecione o DRE para o Dashboard Executivo:", [f.name for f in arquivos_dre])
+    # Seleção de qual DRE usar para compor o Dashboard de imagem
+    lista_nomes_dre = [f.name for f in arquivos_dre]
+    dre_selecionado_nome = st.selectbox("Selecione o arquivo DRE para gerar a imagem executiva:", lista_nomes_dre)
     
-    # Processamento dos dados específicos para o Dashboard Consolidado
-    arq_exec = [f for f in arquivos_dre if f.name == escolha_dre][0]
-    df_dre_exec = pd.read_excel(arq_exec, header=None)
+    # Busca o arquivo carregado correspondente ao nome
+    arq_dre_exec = next(f for f in arquivos_dre if f.name == dre_selecionado_nome)
     
-    termos_exec = {"RB": "Receita Bruta", "RL": "Receita Líquida", "MC": "Margem de Contribuição", "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque", "FOLHA": "Despesas Folha", "ADM": "Despesas ADM", "OPER": "Despesas Operação", "RES": "Resultado Operacional", "CMV": "CMV"}
-    indices_exec = {k: df_dre_exec[df_dre_exec.iloc[:, 1].astype(str).str.strip().str.contains(v, case=False, na=False)].index[0] for k, v in termos_exec.items() if not df_dre_exec[df_dre_exec.iloc[:, 1].astype(str).str.strip().str.contains(v, case=False, na=False)].empty}
-    
-    def get_v_exec(chave): return clean_numeric(df_dre_exec.iloc[indices_exec[chave], 3]) if chave in indices_exec else 0.0
-    v_exec = {k: get_v_exec(k) for k in termos_exec.keys()}
-    rec_exec = v_exec['RL'] if v_exec['RL'] > 0 else 1.0
-    quebra_exec = abs(v_exec['PVL']) + abs(v_exec['DISC'])
-
-    # LAYOUT IGUAL À IMAGEM ANEXADA
-    st.subheader(f"Unidade: {escolha_dre}")
-    
-    # KPIs Topo
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Receita Líquida", f"R$ {v_exec['RL']:,.2f}")
-    k2.metric("Margem Contrib.", f"R$ {v_exec['MC']:,.2f}")
-    k3.metric("Resultado Oper.", f"R$ {v_exec['RES']:,.2f}")
-    k4.metric("Quebras/Perdas", f"R$ {quebra_exec:,.2f}")
-    k5.metric("CMV", f"R$ {abs(v_exec['CMV']):,.2f}", delta=f"{(abs(v_exec['CMV'])/rec_exec)*100:.1f}%", delta_color="off")
-
-    col_esq, col_dir = st.columns([1.2, 1])
-
-    with col_esq:
-        # Alertas
-        if v_exec['RES'] < 0:
-            st.error(f"Déficit operacional de R$ {abs(v_exec['RES']):,.2f}")
+    try:
+        df_exec = pd.read_excel(arq_dre_exec, header=None)
+        st.subheader(f"Unidade: {dre_selecionado_nome}")
         
-        margem_p = (v_exec['MC'] / rec_exec) * 100
-        if margem_p < 35:
-            st.warning(f"Margem Baixa: {margem_p:.2f}% (Meta: 35%)")
+        # Mapeamento rápido para os KPIs
+        termos_ex = {"RL": "Receita Líquida", "MC": "Margem de Contribuição", "RES": "Resultado Operacional", "PVL": "Perdas Vencidos Liquido", "DISC": "Discrepância _ Estoque", "CMV": "CMV", "FOLHA": "Despesas Folha", "ADM": "Despesas ADM", "OPER": "Despesas Operação"}
+        idx_ex = {k: df_exec[df_exec.iloc[:, 1].astype(str).str.strip().str.contains(v, case=False, na=False)].index[0] for k, v in termos_ex.items() if not df_exec[df_exec.iloc[:, 1].astype(str).str.strip().str.contains(v, case=False, na=False)].empty}
         
-        # Gráfico de Barras (Histórico)
-        if df_loja_global is not None:
-            fig_exec_bar = px.bar(df_loja_global, x='Mes_PT', y='Mercadoria', 
-                                 title=f"Realizado vs Projetado: {filial_sel}", 
-                                 template="plotly_white", text='Valor_Texto')
-            fig_exec_bar.add_scatter(x=df_loja_global['Mes_PT'], y=df_loja_global['Crescimento_Esperado'], 
-                                    mode='lines+markers', name='Projeção Teórica', line=dict(color='orange', width=3))
-            fig_exec_bar.update_layout(height=400, showlegend=True)
-            st.plotly_chart(fig_exec_bar, use_container_width=True)
+        def val_ex(k): return clean_numeric(df_exec.iloc[idx_ex[k], 3]) if k in idx_ex else 0.0
+        
+        v_rl = val_ex("RL")
+        v_mc = val_ex("MC")
+        v_res = val_ex("RES")
+        v_quebra = abs(val_ex("PVL")) + abs(val_ex("DISC"))
+        v_cmv = abs(val_ex("CMV"))
+        
+        # LINHA 1: KPIs (Igual ao topo da imagem)
+        k1, k2, k3, k4, k5 = st.columns(5)
+        k1.metric("Receita Líquida", f"R$ {v_rl:,.2f}")
+        k2.metric("Margem Contrib.", f"R$ {v_mc:,.2f}")
+        k3.metric("Resultado Oper.", f"R$ {v_res:,.2f}")
+        k4.metric("Quebras/Perdas", f"R$ {v_quebra:,.2f}")
+        k5.metric("CMV", f"R$ {v_cmv:,.2f}", delta=f"{(v_cmv/v_rl)*100:.1f}%" if v_rl > 0 else "0%", delta_color="off")
 
-    with col_dir:
-        # Gráfico Rosca de Custos
-        df_custos_exec = pd.DataFrame({
-            "Conta": ["Folha", "ADM", "Operação", "Quebra"],
-            "Valor": [abs(v_exec['FOLHA']), abs(v_exec['ADM']), abs(v_exec['OPER']), quebra_exec]
-        })
-        fig_donut = px.pie(df_custos_exec, values='Valor', names='Conta', hole=0.5, 
-                          title="Distribuição de Custos", color_discrete_sequence=px.colors.qualitative.Pastel)
-        fig_donut.update_layout(height=350)
-        st.plotly_chart(fig_donut, use_container_width=True)
+        # LINHA 2: Gráficos e Alertas (Layout imagem)
+        c_left, c_right = st.columns([1.5, 1])
+        
+        with c_left:
+            # Banners de Alerta
+            if v_res < 0:
+                st.error(f"Déficit operacional de R$ {abs(v_res):,.2f}")
+            margem_perc = (v_mc / v_rl) * 100 if v_rl > 0 else 0
+            if margem_perc < 35:
+                st.warning(f"Margem Baixa: {margem_perc:.2f}% (Meta: 35%)")
+            
+            # Gráfico de Barras do Histórico (se disponível)
+            if df_loja_selecionada is not None:
+                fig_bar = px.bar(df_loja_selecionada, x='Mes_PT', y='Mercadoria', title=f"Realizado vs Projetado: {filial_nome_selecionada}", template="plotly_white", text='Valor_Texto')
+                fig_bar.add_scatter(x=df_loja_selecionada['Mes_PT'], y=df_loja_selecionada['Crescimento_Esperado'], mode='lines+markers', name='Projeção Teórica', line=dict(color='orange', width=3))
+                fig_bar.update_layout(height=450)
+                st.plotly_chart(fig_bar, use_container_width=True)
+            else:
+                st.info("Selecione uma filial na Seção 2 para exibir o gráfico de histórico aqui.")
 
-        # Info Boxes (Bottom Right)
-        meses_pos = 0
-        if "RES" in indices_exec:
-            for i in range(3, 30, 2):
-                if clean_numeric(df_dre_exec.iloc[indices_exec["RES"], i]) > 0: meses_pos += 1
-        
-        st.info(f"**Histórico Positivo:** {meses_pos} meses")
-        
-        # Cálculo de Equilíbrio
-        cmv_p = (abs(v_exec['CMV'])/rec_exec)
-        mc_p = 1 - cmv_p
-        peq = v_exec['RL'] + (abs(v_exec['RES']) / mc_p) if mc_p > 0 else 0
-        st.success(f"**Ponto de Equilíbrio CMV {cmv_p*100:.0f}%:** R$ {peq:,.2f}")
-        
-        valvo = v_exec['RL'] + (abs(v_exec['RES']) / 0.35)
-        st.warning(f"**Venda Alvo Sugerida CMV 65%:** R$ {valvo:,.2f}")
-
+        with c_right:
+            # Gráfico de Rosca (Custos)
+            df_donut = pd.DataFrame({
+                "Conta": ["Folha", "ADM", "Operação", "Quebra"],
+                "Valor": [abs(val_ex("FOLHA")), abs(val_ex("ADM")), abs(val_ex("OPER")), v_quebra]
+            })
+            fig_pie = px.pie(df_donut, values='Valor', names='Conta', hole=0.5, title="Distribuição de Custos")
+            fig_pie.update_layout(height=350)
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+            # Boxes Informativos de baixo (Igual imagem)
+            # Histórico Positivo
+            m_pos = 0
+            if "RES" in idx_ex:
+                for i in range(3, 29, 2):
+                    if clean_numeric(df_exec.iloc[idx_ex["RES"], i]) > 0: m_pos += 1
+            
+            st.info(f"Histórico Positivo: {m_pos} meses")
+            
+            # Ponto de Equilíbrio
+            cmv_calc = (v_cmv/v_rl) if v_rl > 0 else 0.65
+            mc_calc = 1 - cmv_calc
+            peq_val = v_rl + (abs(v_res) / mc_calc) if mc_calc > 0 else 0
+            st.success(f"Ponto de Equilíbrio CMV {cmv_calc*100:.0f}%: R$ {peq_val:,.2f}")
+            
+            # Venda Alvo
+            valvo_val = v_rl + (abs(v_res) / 0.35)
+            st.warning(f"Venda Alvo Sugerida CMV 65%: R$ {valvo_val:,.2f}")
+            
+    except Exception as e:
+        st.error(f"Erro ao gerar dashboard executivo: {e}")
 else:
-    st.info("Para visualizar o Dashboard Executivo (Seção 5), certifique-se de carregar tanto o Histórico de Vendas quanto os arquivos de DRE.")
+    st.info("Para ativar o Dashboard Executivo, carregue os arquivos de Histórico e DRE nas seções acima.")
