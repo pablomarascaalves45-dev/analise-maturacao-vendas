@@ -2,8 +2,6 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 import io
-from fpdf import FPDF
-import datetime
 
 # 1. CONFIGURAÇÃO DO DASHBOARD
 st.set_page_config(page_title="Gestão de Maturação, DRE e Performance", layout="wide")
@@ -385,10 +383,10 @@ if arquivos_dre:
             df_final = df_exibicao.style.apply(aplicar_estilo_mestre, axis=1)
             for col_idx in cols_percent:
                 df_final = df_final.format(lambda x: formatar_estilo_celula(x, "pct"), 
-                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             for col_idx in cols_valor:
                 df_final = df_final.format(lambda x: formatar_estilo_celula(x, "val"), 
-                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
+                                         subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
             meses_positivos = 0
@@ -429,69 +427,3 @@ if arquivos_dre:
 
         except Exception as e:
             st.error(f"Erro ao processar {arquivo_dre.name}: {e}")
-
-# --- 5. EXPORTAÇÃO PARA PDF ---
-st.sidebar.markdown("---")
-st.sidebar.header("5. Exportar Relatório")
-
-if st.sidebar.button("Gerar Relatório de Insights PDF"):
-    try:
-        pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.add_page()
-        
-        # Título
-        pdf.set_font("Arial", 'B', 16)
-        pdf.cell(200, 10, txt="Relatorio Estrategico de Performance", ln=True, align='C')
-        pdf.set_font("Arial", size=10)
-        pdf.cell(200, 10, txt=f"Gerado em: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align='C')
-        pdf.ln(10)
-
-        # Insights de Maturação
-        if 'df_res' in locals():
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, txt="1. Projecao de Maturacao", ln=True)
-            pdf.set_font("Arial", size=10)
-            pdf.cell(200, 7, txt=f"Estado Base: {estado_sel}", ln=True)
-            pdf.cell(200, 7, txt=f"Venda Alvo: R$ {valor_estudo:,.2f}", ln=True)
-            pdf.cell(200, 7, txt=f"Tempo para 100%: {mes_mat} Meses", ln=True)
-            pdf.ln(5)
-
-        # Insights de Lojas Negativas
-        if 'df_neg' in locals():
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, txt="2. Unidades Negativas", ln=True)
-            pdf.set_font("Arial", size=10)
-            pdf.cell(200, 7, txt=f"Lojas Analisadas: {qtd_lojas}", ln=True)
-            pdf.cell(200, 7, txt=f"Prejuizo Acumulado: R$ {total_prejuizo_acum:,.2f}", ln=True)
-            pdf.cell(200, 7, txt=f"Media % Aluguel: {media_aluguel_perc:.2f}%", ln=True)
-            
-            if 'lojas_repetidas' in locals() and lojas_repetidas:
-                pdf.set_font("Arial", 'I', 10)
-                pdf.cell(200, 7, txt="Lojas Criticas Recorrentes: " + ", ".join(lojas_repetidas), ln=True)
-            pdf.ln(5)
-
-        # Insights DRE
-        if 'vals' in locals():
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, txt="3. Analise Financeira (DRE)", ln=True)
-            pdf.set_font("Arial", size=10)
-            pdf.cell(200, 7, txt=f"Receita Liquida: R$ {vals['RL']:,.2f}", ln=True)
-            pdf.cell(200, 7, txt=f"Margem de Contribuicao: R$ {vals['MC']:,.2f}", ln=True)
-            pdf.cell(200, 7, txt=f"Resultado Operacional: R$ {vals['RES']:,.2f}", ln=True)
-            if 'p_equilibrio' in locals():
-                pdf.cell(200, 7, txt=f"Ponto de Equilibrio Calc.: R$ {p_equilibrio:,.2f}", ln=True)
-        
-        # Gerar binário
-        pdf_bin = pdf.output(dest='S').encode('latin-1', 'replace')
-        
-        st.sidebar.download_button(
-            label="📥 Baixar PDF",
-            data=pdf_bin,
-            file_name=f"Insights_Performance_{datetime.date.today()}.pdf",
-            mime="application/pdf"
-        )
-        st.sidebar.success("PDF preparado com sucesso!")
-        
-    except Exception as e:
-        st.sidebar.error(f"Erro ao gerar relatório: {e}")
