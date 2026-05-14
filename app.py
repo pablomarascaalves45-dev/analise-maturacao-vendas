@@ -27,7 +27,7 @@ def load_data(file):
                            .str.replace('%', '', regex=False)
                            .str.replace('.', '', regex=False)
                            .str.replace(',', '.', regex=False)
-                           .strip())
+                           .str.strip())
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
             # AJUSTE: Se o valor for decimal, converte para percentual inteiro
@@ -73,7 +73,8 @@ if uploaded_file:
             st.subheader("Aluguel vs Resultado (Mês)")
             fig_scat = px.scatter(df, x='%Aluguel Mês', y='RO Mês', 
                                   hover_name='Desc_CC', size='Aluguel Mês',
-                                  color='Diretor', title="Impacto do Aluguel no RO Mensal")
+                                  color='Diretor' if 'Diretor' in df.columns else None, 
+                                  title="Impacto do Aluguel no RO Mensal")
             
             fig_scat.update_layout(xaxis_ticksuffix="%")
             st.plotly_chart(fig_scat, use_container_width=True)
@@ -95,12 +96,13 @@ if uploaded_file:
             st.subheader("Aluguel vs Resultado (Acumulado)")
             fig_scat_acum = px.scatter(df, x='%Aluguel Mês', y='RO Acum', 
                                        hover_name='Desc_CC', size='Aluguel Mês',
-                                       color='Diretor', title="Impacto do Aluguel no RO Acumulado")
+                                       color='Diretor' if 'Diretor' in df.columns else None, 
+                                       title="Impacto do Aluguel no RO Acumulado")
             
             fig_scat_acum.update_layout(xaxis_ticksuffix="%")
             st.plotly_chart(fig_scat_acum, use_container_width=True)
 
-        # --- NOVA SEÇÃO: RANKINGS DE CUSTO (ALUGUEL E MULTA) ---
+        # --- RANKINGS DE CUSTO (ALUGUEL E MULTA) ---
         st.markdown("---")
         col_rank1, col_rank2 = st.columns(2)
 
@@ -123,7 +125,36 @@ if uploaded_file:
             else:
                 st.info("Aguardando dados de multa rescisória.")
 
-        # --- COMPARAÇÃO DE REPETIÇÃO (MOVIDO PARA O FINAL) ---
+        # --- NOVA SEÇÃO: ANÁLISE DE CARACTERÍSTICAS DOS PONTOS ---
+        st.markdown("---")
+        st.subheader("Análise Qualitativa: Características dos Pontos Críticos")
+        
+        # Mapeamento de colunas de interesse para análise de perfil
+        cols_perfil = ["Posição Loja", "Próximo a mercado", "Vagas", "Calçadão", "Loja atualizada"]
+        cols_existentes = [c for c in cols_perfil if c in df.columns]
+
+        if cols_existentes:
+            # Criamos colunas dinâmicas para os gráficos de perfil
+            col_perfil_1, col_perfil_2 = st.columns(2)
+            
+            for idx, col_analise in enumerate(cols_existentes):
+                # Alterna entre coluna 1 e 2 do Streamlit
+                target_col = col_perfil_1 if idx % 2 == 0 else col_perfil_2
+                
+                with target_col:
+                    # Agrupa para ver a frequência de cada característica nas lojas negativas
+                    df_perfil = df[col_analise].value_counts().reset_index()
+                    df_perfil.columns = [col_analise, 'Quantidade']
+                    
+                    fig_perfil = px.pie(df_perfil, values='Quantidade', names=col_analise, 
+                                        title=f"Perfil: {col_analise}",
+                                        hole=0.4,
+                                        color_discrete_sequence=px.colors.qualitative.Pastel)
+                    st.plotly_chart(fig_perfil, use_container_width=True)
+        else:
+            st.info("Colunas de características (Posição, Vagas, etc.) não encontradas na planilha.")
+
+        # --- COMPARAÇÃO DE REPETIÇÃO ---
         st.markdown("---")
         st.subheader("Cruzamento de Dados: Unidades Críticas Recorrentes")
         
@@ -134,13 +165,13 @@ if uploaded_file:
         if lojas_repetidas:
             st.write(f"Lojas presentes no Top 10 (Mês e Acumulado): {len(lojas_repetidas)}")
             
-            qtd_cols = len(lojas_repetidas)
-            cols = st.columns(qtd_cols) 
+            # Criar colunas proporcional ao número de lojas (máximo 4 por linha para não quebrar o layout)
+            cols = st.columns(len(lojas_repetidas)) 
             
             for i, loja in enumerate(lojas_repetidas):
                 dados_loja = df[df['Desc_CC'] == loja].iloc[0]
                 
-                abertura = dados_loja['Inauguração']
+                abertura = dados_loja.get('Inauguração', 'N/D')
                 if isinstance(abertura, pd.Timestamp):
                     abertura = abertura.strftime('%d/%m/%Y')
                 
@@ -164,4 +195,4 @@ if uploaded_file:
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
 else:
-    st.info("")
+    st.info("Por favor, carregue o arquivo no menu lateral para iniciar a análise.")
