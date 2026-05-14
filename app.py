@@ -26,8 +26,12 @@ def clean_numeric(val):
 @st.cache_data
 def load_data_negativas(file):
     df = pd.read_excel(file)
-    df.columns = df.columns.str.strip()
+    # Garantir que a limpeza de nomes de colunas seja feita corretamente
+    df.columns = [str(c).strip() for c in df.columns]
+    
+    # Lista de colunas financeiras para conversão numérica
     cols_financeiras = ['RO Mês', 'RO Acum', 'Aluguel Mês', '%RO Mês', '%RO Acum', '%Aluguel Mês', 'Multa rescisória atual']
+    
     for col in cols_financeiras:
         if col in df.columns:
             if df[col].dtype == 'object':
@@ -36,8 +40,10 @@ def load_data_negativas(file):
                            .str.replace('%', '', regex=False)
                            .str.replace('.', '', regex=False)
                            .str.replace(',', '.', regex=False)
-                           .strip())
+                           .str.strip())
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            
+            # Ajuste de escala percentual
             if col.startswith('%'):
                 if df[col].abs().mean() < 1.0:
                     df[col] = df[col] * 100
@@ -170,7 +176,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
-# 3. ANÁLISE DE LOJAS NEGATIVAS (SEÇÃO 3)
+# --- SUBSTITUIÇÃO DA SEÇÃO 3: ANÁLISE DE LOJAS NEGATIVAS ---
 st.markdown("---")
 st.header("Análise Estratégica: Performance de Unidades Negativas")
 st.sidebar.header("3. Unidades Negativas")
@@ -183,13 +189,13 @@ arquivo_negativas = st.sidebar.file_uploader(
 
 if arquivo_negativas:
     try:
-        df_neg = load_data_negativas(arquivo_negativas)
+        df = load_data_negativas(arquivo_negativas)
         
-        # DASHBOARD DE MÉTRICAS
-        total_prejuizo_mes = df_neg['RO Mês'].sum()
-        total_prejuizo_acum = df_neg['RO Acum'].sum()
-        qtd_lojas = len(df_neg) 
-        media_aluguel_perc = df_neg['%Aluguel Mês'].mean()
+        # --- DASHBOARD DE MÉTRICAS ---
+        total_prejuizo_mes = df['RO Mês'].sum()
+        total_prejuizo_acum = df['RO Acum'].sum()
+        qtd_lojas = len(df) 
+        media_aluguel_perc = df['%Aluguel Mês'].mean()
 
         c0, c1, c2, c3 = st.columns(4)
         c0.metric("Lojas Analisadas", f"{qtd_lojas}")
@@ -197,11 +203,11 @@ if arquivo_negativas:
         c2.metric("Prejuízo Acumulado", f"R$ {total_prejuizo_acum:,.2f}")
         c3.metric("Média % Aluguel", f"{media_aluguel_perc:.2f}%")
 
-        # ANÁLISE GRÁFICA
+        # --- ANÁLISE GRÁFICA (MÊS) ---
         col_graf1, col_graf2 = st.columns(2)
         with col_graf1:
             st.subheader("Top 10 Unidades Críticas (Mês)")
-            top_negativas = df_neg.nsmallest(10, 'RO Mês')
+            top_negativas = df.nsmallest(10, 'RO Mês')
             fig_neg = px.bar(top_negativas, x='RO Mês', y='Desc_CC', orientation='h',
                              color='RO Mês', color_continuous_scale='Reds_r')
             fig_neg.update_layout(yaxis={'categoryorder':'total ascending'})
@@ -209,17 +215,18 @@ if arquivo_negativas:
 
         with col_graf2:
             st.subheader("Aluguel vs Resultado (Mês)")
-            fig_scat = px.scatter(df_neg, x='%Aluguel Mês', y='RO Mês', 
-                                  hover_name='Desc_CC', size='Aluguel Mês',
-                                  color='Diretor', title="Impacto do Aluguel no RO Mensal")
+            fig_scat = px.scatter(df, x='%Aluguel Mês', y='RO Mês', hover_name='Desc_CC', 
+                                  size='Aluguel Mês', color='Diretor' if 'Diretor' in df.columns else None)
             fig_scat.update_layout(xaxis_ticksuffix="%")
             st.plotly_chart(fig_scat, use_container_width=True)
 
         st.markdown("---")
+        
+        # --- ANÁLISE GRÁFICA (ACUMULADO) ---
         col_graf3, col_graf4 = st.columns(2)
         with col_graf3:
             st.subheader("Top 10 Unidades Críticas (Acumulado)")
-            top_negativas_acum = df_neg.nsmallest(10, 'RO Acum')
+            top_negativas_acum = df.nsmallest(10, 'RO Acum')
             fig_neg_acum = px.bar(top_negativas_acum, x='RO Acum', y='Desc_CC', orientation='h',
                                   color='RO Acum', color_continuous_scale='Reds_r')
             fig_neg_acum.update_layout(yaxis={'categoryorder':'total ascending'})
@@ -227,61 +234,173 @@ if arquivo_negativas:
 
         with col_graf4:
             st.subheader("Aluguel vs Resultado (Acumulado)")
-            fig_scat_acum = px.scatter(df_neg, x='%Aluguel Mês', y='RO Acum', 
-                                       hover_name='Desc_CC', size='Aluguel Mês',
-                                       color='Diretor', title="Impacto do Aluguel no RO Acumulado")
+            fig_scat_acum = px.scatter(df, x='%Aluguel Mês', y='RO Acum', hover_name='Desc_CC', 
+                                       size='Aluguel Mês', color='Diretor' if 'Diretor' in df.columns else None)
             fig_scat_acum.update_layout(xaxis_ticksuffix="%")
             st.plotly_chart(fig_scat_acum, use_container_width=True)
 
-        # RANKINGS DE CUSTO
+        # --- RANKINGS DE CUSTO ---
         st.markdown("---")
         col_rank1, col_rank2 = st.columns(2)
         with col_rank1:
             st.subheader("Top 10 Maiores Aluguéis")
-            top_aluguel = df_neg.nlargest(10, 'Aluguel Mês')
+            top_aluguel = df.nlargest(10, 'Aluguel Mês')
             fig_aluguel = px.bar(top_aluguel, x='Aluguel Mês', y='Desc_CC', orientation='h',
                                  color='Aluguel Mês', color_continuous_scale='Blues')
-            fig_aluguel.update_layout(yaxis={'categoryorder':'total ascending'})
             st.plotly_chart(fig_aluguel, use_container_width=True)
 
         with col_rank2:
             st.subheader("Top 10 Maiores Multas")
-            if 'Multa rescisória atual' in df_neg.columns:
-                top_multa = df_neg.nlargest(10, 'Multa rescisória atual')
+            if 'Multa rescisória atual' in df.columns:
+                top_multa = df.nlargest(10, 'Multa rescisória atual')
                 fig_multa = px.bar(top_multa, x='Multa rescisória atual', y='Desc_CC', orientation='h',
                                    color='Multa rescisória atual', color_continuous_scale='Oranges')
-                fig_multa.update_layout(yaxis={'categoryorder':'total ascending'})
                 st.plotly_chart(fig_multa, use_container_width=True)
-            else:
-                st.info("Aguardando dados de multa rescisória.")
 
-        # CRUZAMENTO DE DADOS
+        # --- ANÁLISE DE CARACTERÍSTICAS DOS PONTOS ---
+        st.markdown("---")
+        st.subheader("Análise Qualitativa: Características dos Pontos Críticos")
+        cols_perfil = ["Posição Loja", "Próximo a mercado", "Vagas", "Loja atualizada"]
+        cols_existentes = [c for c in cols_perfil if c in df.columns]
+
+        if cols_existentes:
+            c_p1, c_p2 = st.columns(2)
+            for idx, col in enumerate(cols_existentes):
+                target = c_p1 if idx % 2 == 0 else c_p2
+                df_p = df[col].value_counts().reset_index()
+                df_p.columns = [col, 'Quantidade']
+                fig = px.pie(df_p, values='Quantidade', names=col, title=f"Perfil: {col}", hole=0.4)
+                target.plotly_chart(fig, use_container_width=True)
+
+        # --- SEÇÃO: POLOS GERADORES DE TRÁFEGO ---
+        st.markdown("---")
+        st.subheader("Polos Geradores de Tráfego")
+        polos_lista = ["Aliment", "Ensin", "Saúd", "Banco", "Bem-est"]
+        cols_polos_encontradas = [c for c in df.columns if any(p.lower() in c.lower() for p in polos_lista)]
+
+        if cols_polos_encontradas:
+            contagem_polos = {}
+            for col in cols_polos_encontradas:
+                filtro_presenca = df[col].astype(str).str.lower().isin(['sim', 'x', 's', '1', '1.0'])
+                contagem_polos[col] = df[filtro_presenca].shape[0]
+            
+            df_polos = pd.DataFrame(list(contagem_polos.items()), columns=['Tipo de Polo', 'Incidência'])
+            df_polos = df_polos.sort_values(by='Incidência', ascending=False)
+            col_p1, col_p2 = st.columns([2, 1])
+            with col_p1:
+                fig_polos = px.bar(df_polos, x='Tipo de Polo', y='Incidência', 
+                                  title="Presença de Polos Geradores nas Unidades Negativas",
+                                  color='Incidência', color_continuous_scale='Viridis')
+                st.plotly_chart(fig_polos, use_container_width=True)
+            with col_p2:
+                st.info("**Análise de Tráfego**")
+                st.write("Esta visão demonstra quais tipos de estabelecimentos vizinhos são mais comuns nas lojas com RO negativo.")
+
+        # --- SEÇÃO: ANÁLISE DE CONCORRÊNCIA ---
+        st.markdown("---")
+        st.subheader("Análise de Concorrência: Impacto na Performance")
+        concorrentes_lista = ["SaoJoao", "Independente", "Panvel", "Raia", "Morifarma", "Nissei", "PPCatarinense", "Pacheco", "FarmTrabalhador"]
+        cols_conc_encontradas = [c for c in df.columns if any(conc.lower() in c.lower() for conc in concorrentes_lista)]
+
+        if cols_conc_encontradas:
+            contagem_concorrentes = {}
+            for col in cols_conc_encontradas:
+                filtro_presenca = df[col].astype(str).str.lower().isin(['sim', 'x', 's', '1', '1.0'])
+                contagem_concorrentes[col] = df[filtro_presenca].shape[0]
+            
+            df_conc = pd.DataFrame(list(contagem_concorrentes.items()), columns=['Rede', 'Lojas Próximas'])
+            df_conc = df_conc.sort_values(by='Lojas Próximas', ascending=False)
+            col_c1, col_c2 = st.columns([2, 1])
+            with col_c1:
+                fig_conc = px.bar(df_conc, x='Rede', y='Lojas Próximas', 
+                                  title="Incidência de Concorrentes nas Unidades Negativas",
+                                  color='Lojas Próximas', color_continuous_scale='Turbo')
+                st.plotly_chart(fig_conc, use_container_width=True)
+            with col_c2:
+                st.info("**Análise de Densidade**")
+                st.write("O gráfico ao lado indica quais bandeiras concorrentes possuem maior sobreposição geográfica.")
+
+        # --- CRUZAMENTO DE DADOS: UNIDADES CRÍTICAS RECORRENTES ---
         st.markdown("---")
         st.subheader("Cruzamento de Dados: Unidades Críticas Recorrentes")
+        
         lojas_mes = set(top_negativas['Desc_CC'])
         lojas_acum = set(top_negativas_acum['Desc_CC'])
         lojas_repetidas = sorted(list(lojas_mes.intersection(lojas_acum)))
         
         if lojas_repetidas:
             st.write(f"Lojas presentes no Top 10 (Mês e Acumulado): {len(lojas_repetidas)}")
-            cols = st.columns(len(lojas_repetidas)) 
+            cols_rep = st.columns(len(lojas_repetidas)) 
+            
             for i, loja in enumerate(lojas_repetidas):
-                dados_loja = df_neg[df_neg['Desc_CC'] == loja].iloc[0]
-                abertura = dados_loja['Inauguração']
-                if isinstance(abertura, pd.Timestamp):
-                    abertura = abertura.strftime('%d/%m/%Y')
+                dados_loja = df[df['Desc_CC'] == loja].iloc[0]
                 
-                with cols[i]:
+                conc_loja = {}
+                for col in cols_conc_encontradas:
+                    val = str(dados_loja[col]).lower()
+                    if val in ['sim', 'x', 's', '1', '1.0']:
+                        conc_loja[col] = 1
+                top_3_conc = sorted(conc_loja.items(), key=lambda x: x[1], reverse=True)[:3]
+                str_conc = " / ".join([f"{c[0]}: {c[1]}" for c in top_3_conc]) if top_3_conc else "Nenhum mapeado"
+
+                polos_loja = [col for col in cols_polos_encontradas if str(dados_loja[col]).lower() in ['sim', 'x', 's', '1', '1.0']]
+                str_polos = ", ".join(polos_loja[:3]) if polos_loja else "Nenhum mapeado"
+
+                with cols_rep[i]:
                     st.info(f"""
                     **{loja}**
-                    - Abertura: {abertura}
-                    - RO Mês: R$ {dados_loja['RO Mês']:,.2f}
-                    - RO Acum: R$ {dados_loja['RO Acum']:,.2f}
-                    - Aluguel: R$ {dados_loja['Aluguel Mês']:,.2f}
-                    - Multa: R$ {dados_loja.get('Multa rescisória atual', 0):,.2f}
+                    
+                    **Financeiro:**
+                    * RO Mês: R$ {dados_loja['RO Mês']:,.2f}
+                    * RO Acum: R$ {dados_loja['RO Acum']:,.2f}
+                    * Aluguel: R$ {dados_loja['Aluguel Mês']:,.2f}
+                    
+                    **Vizinhança:**
+                    * 🏁 {str_conc}
+                    * 📍 {str_polos}
                     """)
         else:
-            st.write("Não há recorrência de lojas entre os rankings selecionados.")
+            st.write("Não há recorrência de lojas entre os rankings.")
+
+        # --- NOVA SEÇÃO: DEMAIS UNIDADES NEGATIVAS ---
+        st.markdown("---")
+        st.subheader("Demais Unidades com Performance Negativa")
+        
+        df_restante = df[~df['Desc_CC'].isin(lojas_repetidas)].copy()
+        df_restante = df_restante.sort_values(by='RO Mês', ascending=True)
+        
+        if not df_restante.empty:
+            cols_restante = st.columns(4)
+            for idx, (_, dados_loja) in enumerate(df_restante.iterrows()):
+                col_idx = idx % 4
+                loja_nome = dados_loja['Desc_CC']
+                
+                conc_loja = {}
+                for col in cols_conc_encontradas:
+                    val = str(dados_loja[col]).lower()
+                    if val in ['sim', 'x', 's', '1', '1.0']:
+                        conc_loja[col] = 1
+                top_3_conc = sorted(conc_loja.items(), key=lambda x: x[1], reverse=True)[:3]
+                str_conc = " / ".join([f"{c[0]}: {c[1]}" for c in top_3_conc]) if top_3_conc else "Nenhum mapeado"
+
+                polos_loja = [col for col in cols_polos_encontradas if str(dados_loja[col]).lower() in ['sim', 'x', 's', '1', '1.0']]
+                str_polos = ", ".join(polos_loja[:3]) if polos_loja else "Nenhum mapeado"
+
+                with cols_restante[col_idx]:
+                    st.warning(f"""
+                    **{loja_nome}**
+                    
+                    **Financeiro:**
+                    * RO Mês: R$ {dados_loja['RO Mês']:,.2f}
+                    * RO Acum: R$ {dados_loja['RO Acum']:,.2f}
+                    * Aluguel: R$ {dados_loja['Aluguel Mês']:,.2f}
+                    
+                    **Vizinhança:**
+                    * 🏁 {str_conc}
+                    * 📍 {str_polos}
+                    """)
+        else:
+            st.write("Não há outras unidades negativas registradas.")
 
     except Exception as e:
         st.error(f"Erro ao processar lojas negativas: {e}")
