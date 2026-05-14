@@ -129,21 +129,17 @@ if uploaded_file:
         # --- SEÇÃO: POLOS GERADORES DE TRÁFEGO ---
         st.markdown("---")
         st.subheader("Polos Geradores de Tráfego")
-        
-        # Identifica colunas de polos (Alimentação, Ensino, Saúde, Bancos, etc)
         polos_lista = ["Aliment", "Ensin", "Saúd", "Banco", "Bem-est"]
         cols_polos_encontradas = [c for c in df.columns if any(p.lower() in c.lower() for p in polos_lista)]
 
         if cols_polos_encontradas:
             contagem_polos = {}
             for col in cols_polos_encontradas:
-                # Conta incidência de marcações positivas
                 filtro_presenca = df[col].astype(str).str.lower().isin(['sim', 'x', 's', '1', '1.0'])
                 contagem_polos[col] = df[filtro_presenca].shape[0]
             
             df_polos = pd.DataFrame(list(contagem_polos.items()), columns=['Tipo de Polo', 'Incidência'])
             df_polos = df_polos.sort_values(by='Incidência', ascending=False)
-
             col_p1, col_p2 = st.columns([2, 1])
             with col_p1:
                 fig_polos = px.bar(df_polos, x='Tipo de Polo', y='Incidência', 
@@ -152,14 +148,13 @@ if uploaded_file:
                 st.plotly_chart(fig_polos, use_container_width=True)
             with col_p2:
                 st.info("**Análise de Tráfego**")
-                st.write("Esta visão demonstra quais tipos de estabelecimentos vizinhos são mais comuns nas lojas com RO negativo. Isso ajuda a entender se o fluxo gerado por 'Ensino' ou 'Saúde', por exemplo, está convertendo em vendas para a farmácia.")
+                st.write("Esta visão demonstra quais tipos de estabelecimentos vizinhos são mais comuns nas lojas com RO negativo.")
         else:
             st.info("Colunas de Polos Geradores não identificadas.")
 
         # --- SEÇÃO: ANÁLISE DE CONCORRÊNCIA ---
         st.markdown("---")
         st.subheader("Análise de Concorrência: Impacto na Performance")
-        
         concorrentes_lista = ["SaoJoao", "Independente", "Panvel", "Raia", "Morifarma", "Nissei", "PPCatarinense", "Pacheco", "FarmTrabalhador"]
         cols_conc_encontradas = [c for c in df.columns if any(conc.lower() in c.lower() for conc in concorrentes_lista)]
 
@@ -171,7 +166,6 @@ if uploaded_file:
             
             df_conc = pd.DataFrame(list(contagem_concorrentes.items()), columns=['Rede', 'Lojas Próximas'])
             df_conc = df_conc.sort_values(by='Lojas Próximas', ascending=False)
-
             col_c1, col_c2 = st.columns([2, 1])
             with col_c1:
                 fig_conc = px.bar(df_conc, x='Rede', y='Lojas Próximas', 
@@ -180,11 +174,11 @@ if uploaded_file:
                 st.plotly_chart(fig_conc, use_container_width=True)
             with col_c2:
                 st.info("**Análise de Densidade**")
-                st.write("O gráfico ao lado indica quais bandeiras concorrentes possuem maior sobreposição geográfica com suas unidades de baixo desempenho.")
+                st.write("O gráfico ao lado indica quais bandeiras concorrentes possuem maior sobreposição geográfica.")
         else:
             st.info("Colunas de concorrentes não identificadas na planilha.")
 
-        # --- COMPARAÇÃO DE REPETIÇÃO ---
+        # --- CRUZAMENTO DE DADOS: UNIDADES CRÍTICAS RECORRENTES (COM AJUSTE DE CONCORRENTES E POLOS) ---
         st.markdown("---")
         st.subheader("Cruzamento de Dados: Unidades Críticas Recorrentes")
         
@@ -195,10 +189,45 @@ if uploaded_file:
         if lojas_repetidas:
             st.write(f"Lojas presentes no Top 10 (Mês e Acumulado): {len(lojas_repetidas)}")
             cols = st.columns(len(lojas_repetidas)) 
+            
             for i, loja in enumerate(lojas_repetidas):
                 dados_loja = df[df['Desc_CC'] == loja].iloc[0]
+                
+                # --- Extração de Concorrentes para a Loja ---
+                conc_loja = {}
+                for col in cols_conc_encontradas:
+                    val = str(dados_loja[col]).lower()
+                    if val in ['sim', 'x', 's', '1', '1.0']:
+                        # Tenta extrair o valor numérico se houver, senão assume 1
+                        conc_loja[col] = 1
+                
+                # Ordena e pega os 3 principais (ou os que tiverem 'Sim')
+                top_3_conc = sorted(conc_loja.items(), key=lambda x: x[1], reverse=True)[:3]
+                str_conc = " / ".join([f"{c[0]}: {c[1]}" for c in top_3_conc]) if top_3_conc else "Nenhum mapeado"
+
+                # --- Extração de Polos para a Loja ---
+                polos_loja = []
+                for col in cols_polos_encontradas:
+                    val = str(dados_loja[col]).lower()
+                    if val in ['sim', 'x', 's', '1', '1.0']:
+                        polos_loja.append(col)
+                
+                top_3_polos = polos_loja[:3]
+                str_polos = ", ".join(top_3_polos) if top_3_polos else "Nenhum mapeado"
+
                 with cols[i]:
-                    st.info(f"**{loja}**\n\nRO Mês: R$ {dados_loja['RO Mês']:,.2f}\n\nRO Acum: R$ {dados_loja['RO Acum']:,.2f}\n\nAluguel: R$ {dados_loja['Aluguel Mês']:,.2f}")
+                    st.info(f"""
+                    **{loja}**
+                    
+                    **Financeiro:**
+                    * RO Mês: R$ {dados_loja['RO Mês']:,.2f}
+                    * RO Acum: R$ {dados_loja['RO Acum']:,.2f}
+                    * Aluguel: R$ {dados_loja['Aluguel Mês']:,.2f}
+                    
+                    **Vizinhança:**
+                    * 🏁 {str_conc}
+                    * 📍 {str_polos}
+                    """)
         else:
             st.write("Não há recorrência de lojas entre os rankings.")
 
