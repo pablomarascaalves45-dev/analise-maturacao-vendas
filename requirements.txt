@@ -2,4 +2,3 @@ pandas
 plotly
 streamlit
 openpyxl
-pip install fpdf
