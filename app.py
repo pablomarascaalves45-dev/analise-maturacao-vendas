@@ -111,7 +111,7 @@ if uploaded_file:
                                    color='Multa rescisória atual', color_continuous_scale='Oranges')
                 st.plotly_chart(fig_multa, use_container_width=True)
 
-        # --- ANÁLISE DE CARACTERÍSTICAS DOS PONTOS (SEM CALÇADÃO) ---
+        # --- ANÁLISE DE CARACTERÍSTICAS DOS PONTOS ---
         st.markdown("---")
         st.subheader("Análise Qualitativa: Características dos Pontos Críticos")
         cols_perfil = ["Posição Loja", "Próximo a mercado", "Vagas", "Loja atualizada"]
@@ -175,10 +175,8 @@ if uploaded_file:
             with col_c2:
                 st.info("**Análise de Densidade**")
                 st.write("O gráfico ao lado indica quais bandeiras concorrentes possuem maior sobreposição geográfica.")
-        else:
-            st.info("Colunas de concorrentes não identificadas na planilha.")
 
-        # --- CRUZAMENTO DE DADOS: UNIDADES CRÍTICAS RECORRENTES (COM AJUSTE DE CONCORRENTES E POLOS) ---
+        # --- CRUZAMENTO DE DADOS: UNIDADES CRÍTICAS RECORRENTES ---
         st.markdown("---")
         st.subheader("Cruzamento de Dados: Unidades Críticas Recorrentes")
         
@@ -188,34 +186,25 @@ if uploaded_file:
         
         if lojas_repetidas:
             st.write(f"Lojas presentes no Top 10 (Mês e Acumulado): {len(lojas_repetidas)}")
-            cols = st.columns(len(lojas_repetidas)) 
+            cols_rep = st.columns(len(lojas_repetidas)) 
             
             for i, loja in enumerate(lojas_repetidas):
                 dados_loja = df[df['Desc_CC'] == loja].iloc[0]
                 
-                # --- Extração de Concorrentes para a Loja ---
+                # Extração de Concorrentes
                 conc_loja = {}
                 for col in cols_conc_encontradas:
                     val = str(dados_loja[col]).lower()
                     if val in ['sim', 'x', 's', '1', '1.0']:
-                        # Tenta extrair o valor numérico se houver, senão assume 1
                         conc_loja[col] = 1
-                
-                # Ordena e pega os 3 principais (ou os que tiverem 'Sim')
                 top_3_conc = sorted(conc_loja.items(), key=lambda x: x[1], reverse=True)[:3]
                 str_conc = " / ".join([f"{c[0]}: {c[1]}" for c in top_3_conc]) if top_3_conc else "Nenhum mapeado"
 
-                # --- Extração de Polos para a Loja ---
-                polos_loja = []
-                for col in cols_polos_encontradas:
-                    val = str(dados_loja[col]).lower()
-                    if val in ['sim', 'x', 's', '1', '1.0']:
-                        polos_loja.append(col)
-                
-                top_3_polos = polos_loja[:3]
-                str_polos = ", ".join(top_3_polos) if top_3_polos else "Nenhum mapeado"
+                # Extração de Polos
+                polos_loja = [col for col in cols_polos_encontradas if str(dados_loja[col]).lower() in ['sim', 'x', 's', '1', '1.0']]
+                str_polos = ", ".join(polos_loja[:3]) if polos_loja else "Nenhum mapeado"
 
-                with cols[i]:
+                with cols_rep[i]:
                     st.info(f"""
                     **{loja}**
                     
@@ -230,6 +219,51 @@ if uploaded_file:
                     """)
         else:
             st.write("Não há recorrência de lojas entre os rankings.")
+
+        # --- NOVA SEÇÃO: DEMAIS UNIDADES NEGATIVAS (33 UNIDADES) ---
+        st.markdown("---")
+        st.subheader("Demais Unidades com Performance Negativa")
+        
+        # Filtra quem não está no Top recorrente e ordena pelo maior prejuízo (mais negativo primeiro)
+        df_restante = df[~df['Desc_CC'].isin(lojas_repetidas)].copy()
+        df_restante = df_restante.sort_values(by='RO Mês', ascending=True)
+        
+        if not df_restante.empty:
+            # Organiza em grid de 4 colunas para facilitar a leitura
+            cols_restante = st.columns(4)
+            for idx, (_, dados_loja) in enumerate(df_restante.iterrows()):
+                col_idx = idx % 4
+                loja_nome = dados_loja['Desc_CC']
+                
+                # Extração de Concorrentes para a loja atual
+                conc_loja = {}
+                for col in cols_conc_encontradas:
+                    val = str(dados_loja[col]).lower()
+                    if val in ['sim', 'x', 's', '1', '1.0']:
+                        conc_loja[col] = 1
+                top_3_conc = sorted(conc_loja.items(), key=lambda x: x[1], reverse=True)[:3]
+                str_conc = " / ".join([f"{c[0]}: {c[1]}" for c in top_3_conc]) if top_3_conc else "Nenhum mapeado"
+
+                # Extração de Polos para a loja atual
+                polos_loja = [col for col in cols_polos_encontradas if str(dados_loja[col]).lower() in ['sim', 'x', 's', '1', '1.0']]
+                str_polos = ", ".join(polos_loja[:3]) if polos_loja else "Nenhum mapeado"
+
+                with cols_restante[col_idx]:
+                    # Usei warning para diferenciar a cor do Top 4 (info)
+                    st.warning(f"""
+                    **{loja_nome}**
+                    
+                    **Financeiro:**
+                    * RO Mês: R$ {dados_loja['RO Mês']:,.2f}
+                    * RO Acum: R$ {dados_loja['RO Acum']:,.2f}
+                    * Aluguel: R$ {dados_loja['Aluguel Mês']:,.2f}
+                    
+                    **Vizinhança:**
+                    * 🏁 {str_conc}
+                    * 📍 {str_polos}
+                    """)
+        else:
+            st.write("Não há outras unidades negativas registradas.")
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
