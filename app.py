@@ -114,7 +114,6 @@ if uploaded_file:
         # --- ANÁLISE DE CARACTERÍSTICAS DOS PONTOS (SEM CALÇADÃO) ---
         st.markdown("---")
         st.subheader("Análise Qualitativa: Características dos Pontos Críticos")
-        # Removido "Calçadão" da lista abaixo
         cols_perfil = ["Posição Loja", "Próximo a mercado", "Vagas", "Loja atualizada"]
         cols_existentes = [c for c in cols_perfil if c in df.columns]
 
@@ -127,7 +126,37 @@ if uploaded_file:
                 fig = px.pie(df_p, values='Quantidade', names=col, title=f"Perfil: {col}", hole=0.4)
                 target.plotly_chart(fig, use_container_width=True)
 
-        # --- NOVA SEÇÃO: ANÁLISE DE CONCORRÊNCIA ---
+        # --- SEÇÃO: POLOS GERADORES DE TRÁFEGO ---
+        st.markdown("---")
+        st.subheader("Polos Geradores de Tráfego")
+        
+        # Identifica colunas de polos (Alimentação, Ensino, Saúde, Bancos, etc)
+        polos_lista = ["Aliment", "Ensin", "Saúd", "Banco", "Bem-est"]
+        cols_polos_encontradas = [c for c in df.columns if any(p.lower() in c.lower() for p in polos_lista)]
+
+        if cols_polos_encontradas:
+            contagem_polos = {}
+            for col in cols_polos_encontradas:
+                # Conta incidência de marcações positivas
+                filtro_presenca = df[col].astype(str).str.lower().isin(['sim', 'x', 's', '1', '1.0'])
+                contagem_polos[col] = df[filtro_presenca].shape[0]
+            
+            df_polos = pd.DataFrame(list(contagem_polos.items()), columns=['Tipo de Polo', 'Incidência'])
+            df_polos = df_polos.sort_values(by='Incidência', ascending=False)
+
+            col_p1, col_p2 = st.columns([2, 1])
+            with col_p1:
+                fig_polos = px.bar(df_polos, x='Tipo de Polo', y='Incidência', 
+                                  title="Presença de Polos Geradores nas Unidades Negativas",
+                                  color='Incidência', color_continuous_scale='Viridis')
+                st.plotly_chart(fig_polos, use_container_width=True)
+            with col_p2:
+                st.info("**Análise de Tráfego**")
+                st.write("Esta visão demonstra quais tipos de estabelecimentos vizinhos são mais comuns nas lojas com RO negativo. Isso ajuda a entender se o fluxo gerado por 'Ensino' ou 'Saúde', por exemplo, está convertendo em vendas para a farmácia.")
+        else:
+            st.info("Colunas de Polos Geradores não identificadas.")
+
+        # --- SEÇÃO: ANÁLISE DE CONCORRÊNCIA ---
         st.markdown("---")
         st.subheader("Análise de Concorrência: Impacto na Performance")
         
