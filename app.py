@@ -26,10 +26,8 @@ def clean_numeric(val):
 @st.cache_data
 def load_data_negativas(file):
     df = pd.read_excel(file)
-    # Garantir que a limpeza de nomes de colunas seja feita corretamente
     df.columns = [str(c).strip() for c in df.columns]
     
-    # Lista de colunas financeiras para conversão numérica
     cols_financeiras = ['RO Mês', 'RO Acum', 'Aluguel Mês', '%RO Mês', '%RO Acum', '%Aluguel Mês', 'Multa rescisória atual']
     
     for col in cols_financeiras:
@@ -43,7 +41,6 @@ def load_data_negativas(file):
                            .str.strip())
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
-            # Ajuste de escala percentual
             if col.startswith('%'):
                 if df[col].abs().mean() < 1.0:
                     df[col] = df[col] * 100
@@ -139,7 +136,6 @@ arquivo_historico = st.sidebar.file_uploader(
     key="hist_file"
 )
 
-# Variável para armazenar dados da filial para a seção 5
 df_loja_selecionada = None
 filial_nome_selecionada = ""
 
@@ -173,7 +169,6 @@ if arquivo_historico is not None:
             df_loja['Mes_PT'] = df_loja['AnoMes'].apply(formatar_mes_pt)
             df_loja['Valor_Texto'] = df_loja['Mercadoria'].apply(lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
             
-            # Salva para uso na seção 5
             df_loja_selecionada = df_loja
             filial_nome_selecionada = filial_sel
             
@@ -184,7 +179,7 @@ if arquivo_historico is not None:
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
 
-# --- SUBSTITUIÇÃO DA SEÇÃO 3: ANÁLISE DE LOJAS NEGATIVAS ---
+# 4. ANÁLISE DE LOJAS NEGATIVAS (SEÇÃO 3)
 st.markdown("---")
 st.header("Análise Estratégica: Performance de Unidades Negativas")
 st.sidebar.header("3. Unidades Negativas")
@@ -199,7 +194,6 @@ if arquivo_negativas:
     try:
         df = load_data_negativas(arquivo_negativas)
         
-        # --- DASHBOARD DE MÉTRICAS ---
         total_prejuizo_mes = df['RO Mês'].sum()
         total_prejuizo_acum = df['RO Acum'].sum()
         qtd_lojas = len(df) 
@@ -211,7 +205,6 @@ if arquivo_negativas:
         c2.metric("Prejuízo Acumulado", f"R$ {total_prejuizo_acum:,.2f}")
         c3.metric("Média % Aluguel", f"{media_aluguel_perc:.2f}%")
 
-        # --- ANÁLISE GRÁFICA (MÊS) ---
         col_graf1, col_graf2 = st.columns(2)
         with col_graf1:
             st.subheader("Top 10 Unidades Críticas (Mês)")
@@ -230,7 +223,6 @@ if arquivo_negativas:
 
         st.markdown("---")
         
-        # --- ANÁLISE GRÁFICA (ACUMULADO) ---
         col_graf3, col_graf4 = st.columns(2)
         with col_graf3:
             st.subheader("Top 10 Unidades Críticas (Acumulado)")
@@ -247,7 +239,6 @@ if arquivo_negativas:
             fig_scat_acum.update_layout(xaxis_ticksuffix="%")
             st.plotly_chart(fig_scat_acum, use_container_width=True)
 
-        # --- RANKINGS DE CUSTO ---
         st.markdown("---")
         col_rank1, col_rank2 = st.columns(2)
         with col_rank1:
@@ -265,7 +256,6 @@ if arquivo_negativas:
                                    color='Multa rescisória atual', color_continuous_scale='Oranges')
                 st.plotly_chart(fig_multa, use_container_width=True)
 
-        # --- ANÁLISE DE CARACTERÍSTICAS DOS PONTOS ---
         st.markdown("---")
         st.subheader("Análise Qualitativa: Características dos Pontos Críticos")
         cols_perfil = ["Posição Loja", "Próximo a mercado", "Vagas", "Loja atualizada"]
@@ -280,7 +270,6 @@ if arquivo_negativas:
                 fig = px.pie(df_p, values='Quantidade', names=col, title=f"Perfil: {col}", hole=0.4)
                 target.plotly_chart(fig, use_container_width=True)
 
-        # --- SEÇÃO: POLOS GERADORES DE TRÁFEGO ---
         st.markdown("---")
         st.subheader("Polos Geradores de Tráfego")
         polos_lista = ["Aliment", "Ensin", "Saúd", "Banco", "Bem-est"]
@@ -304,7 +293,6 @@ if arquivo_negativas:
                 st.info("**Análise de Tráfego**")
                 st.write("Esta visão demonstra quais tipos de estabelecimentos vizinhos são mais comuns nas lojas com RO negativo.")
 
-        # --- SEÇÃO: ANÁLISE DE CONCORRÊNCIA ---
         st.markdown("---")
         st.subheader("Análise de Concorrência: Impacto na Performance")
         concorrentes_lista = ["SaoJoao", "Independente", "Panvel", "Raia", "Morifarma", "Nissei", "PPCatarinense", "Pacheco", "FarmTrabalhador"]
@@ -328,7 +316,6 @@ if arquivo_negativas:
                 st.info("**Análise de Densidade**")
                 st.write("O gráfico ao lado indica quais bandeiras concorrentes possuem maior sobreposição geográfica.")
 
-        # --- CRUZAMENTO DE DADOS: UNIDADES CRÍTICAS RECORRENTES ---
         st.markdown("---")
         st.subheader("Cruzamento de Dados: Unidades Críticas Recorrentes")
         
@@ -370,7 +357,6 @@ if arquivo_negativas:
         else:
             st.write("Não há recorrência de lojas entre os rankings.")
 
-        # --- NOVA SEÇÃO: DEMAIS UNIDADES NEGATIVAS ---
         st.markdown("---")
         st.subheader("Demais Unidades com Performance Negativa")
         
@@ -415,7 +401,7 @@ if arquivo_negativas:
 else:
     st.info("Faça o upload do arquivo de Lojas Negativas para ativar esta seção.")
 
-# 4. ANÁLISE FINANCEIRA (DRE) (SEÇÃO 4)
+# 5. ANÁLISE FINANCEIRA (DRE) (SEÇÃO 4)
 st.markdown("---")
 st.header("Análise de DRE e Rentabilidade")
 st.sidebar.header("4. Relatórios Financeiros")
@@ -516,41 +502,57 @@ if arquivos_dre:
                                          subset=pd.IndexSlice[2:, df_exibicao.columns[col_idx]])
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            meses_positivos = 0
-            p_equilibrio, v_alvo_sugerida = 0.0, 0.0
-            cmv_exibicao_formatado = 0.0
-            
-            if "RES" in indices:
-                row_res = df_dre_raw.iloc[indices["RES"]]
-                for i in range(3, len(row_res), 2):
-                    if clean_numeric(row_res[i]) > 0: 
-                        meses_positivos += 1
-                
-                try:
-                    faturamento_atual = clean_numeric(df_dre_raw.iloc[indices["RL"], 29])
-                    resultado_atual = clean_numeric(row_res[29])
-                    cmv_bruto = clean_numeric(df_dre_raw.iloc[indices["CMV"], 30])
-                    cmv_para_calculo = abs(cmv_bruto)
-                    if cmv_para_calculo > 1: 
-                        cmv_para_calculo = cmv_para_calculo / 100
-                    
-                    cmv_exibicao_formatado = cmv_para_calculo * 100
-                    margem_cont_real = 1 - cmv_para_calculo
-                    
-                    if margem_cont_real > 0:
-                        p_equilibrio = faturamento_atual + (abs(resultado_atual) / margem_cont_real)
-                    else:
-                        p_equilibrio = 0.0
-
-                    v_alvo_sugerida = faturamento_atual + (abs(resultado_atual) / 0.35)
-                except:
-                    p_equilibrio, v_alvo_sugerida = 0.0, 0.0
-
-            r1, r2, r3 = st.columns(3)
-            r1.info(f"Histórico Positivo: {meses_positivos} meses")
-            r2.success(f"Ponto de Equilíbrio CMV {cmv_exibicao_formatado:.0f}%: R$ {p_equilibrio:,.2f}")
-            r3.warning(f"Venda Alvo Sugerida CMV 65%: R$ {v_alvo_sugerida:,.2f}")
-            st.markdown("---")
-
         except Exception as e:
-            st.error(f"Erro ao processar {arquivo_dre.name}: {e}")
+            st.error(f"Erro ao processar DRE ({arquivo_dre.name}): {e}")
+
+# 6. MÓDULO ADICIONAL: ANÁLISE DE INAUGURAÇÕES HISTÓRICAS (SEÇÃO 5)
+st.markdown("---")
+st.header("Análise de Inaugurações e Maturação Histórica")
+st.sidebar.header("5. Inaugurações")
+
+arquivos_inauguracoes = st.sidebar.file_uploader(
+    "Planilhas de Inaugurações (2021-2025):", 
+    type=["xlsx", "xls"], 
+    key="inaug_files",
+    accept_multiple_files=True
+)
+
+if arquivos_inauguracoes:
+    try:
+        lista_dfs = []
+        for file in arquivos_inauguracoes:
+            df_inaug = pd.read_excel(file)
+            df_inaug.columns = [str(c).strip() for c in df_inaug.columns]
+            df_inaug['Arquivo_Origem'] = file.name
+            lista_dfs.append(df_inaug)
+        
+        df_todas_inaug = pd.concat(lista_dfs, ignore_index=True)
+        df_todas_inaug = df_todas_inaug[df_todas_inaug['Desc. Loja'].astype(str).str.lower() != 'total']
+        
+        m_col1, m_col2, m_col3 = st.columns(3)
+        m_col1.metric("Total de Inaugurações Mapeadas", f"{len(df_todas_inaug)}")
+        
+        if 'Valor do Potencial' in df_todas_inaug.columns:
+            df_todas_inaug['Valor do Potencial'] = df_todas_inaug['Valor do Potencial'].apply(clean_numeric)
+            media_potencial = df_todas_inaug['Valor do Potencial'].mean()
+            m_col2.metric("Média do Potencial de Mercado (VPM)", f"R$ {media_potencial:,.2f}")
+            
+        if 'Resultado Oper. Acum.' in df_todas_inaug.columns:
+            df_todas_inaug['Resultado Oper. Acum.'] = df_todas_inaug['Resultado Oper. Acum.'].apply(clean_numeric)
+            ro_medio = df_todas_inaug['Resultado Oper. Acum.'].mean()
+            m_col3.metric("Resultado Operacional Acum. Médio", f"R$ {ro_medio:,.2f}")
+
+        # Tabela interativa de busca por unidade
+        st.subheader("Detalhamento por Unidade Inaugurada")
+        col_lojas = sorted(df_todas_inaug['Desc. Loja'].astype(str).unique())
+        loja_inaug_sel = st.selectbox("Selecione a Loja Inaugurada:", ["Todas"] + col_lojas)
+        
+        if loja_inaug_sel != "Todas":
+            df_exib_inaug = df_todas_inaug[df_todas_inaug['Desc. Loja'] == loja_inaug_sel]
+        else:
+            df_exib_inaug = df_todas_inaug
+
+        st.dataframe(df_exib_inaug[['Desc. Loja', 'Dt_Abertura', 'Valor do Potencial', 'Resultado Oper. Acum.', 'Arquivo_Origem']], use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Erro ao processar arquivos de inaugurações: {e}")
